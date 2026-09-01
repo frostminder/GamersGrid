@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GamersGridLogo } from '../components/GamersGridLogo';
-import { Check, ChevronRight, Gamepad2, Monitor, Smartphone, Tv } from 'lucide-react';
+import { Check, ChevronRight, Gamepad2, Monitor, Smartphone, Tv, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
 import { collection, query, where, getDocs, doc, setDoc } from 'firebase/firestore';
 
@@ -33,6 +33,36 @@ export const OnboardingScreen: React.FC = () => {
   const [logoError, setLogoError] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  
+  const [tagStatus, setTagStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
+
+  const checkGamertagUnique = async (tag: string) => {
+    const q = query(collection(db, 'users'), where('gamertagLower', '==', tag.toLowerCase()));
+    const snapshot = await getDocs(q);
+    return snapshot.empty;
+  };
+
+  useEffect(() => {
+    if (step !== 1) return;
+    
+    if (gamertag.trim().length < 3) {
+      setTagStatus('idle');
+      return;
+    }
+
+    setTagStatus('checking');
+    const timer = setTimeout(async () => {
+      try {
+        const isUnique = await checkGamertagUnique(gamertag.trim());
+        setTagStatus(isUnique ? 'available' : 'taken');
+      } catch (err) {
+        console.error('Error checking gamertag:', err);
+        setTagStatus('idle'); // Fallback if error
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [gamertag, step]);
 
   const togglePlatform = (id: string) => {
     setSelectedPlatforms(prev => 
@@ -46,31 +76,15 @@ export const OnboardingScreen: React.FC = () => {
     );
   };
 
-  const checkGamertagUnique = async (tag: string) => {
-    const q = query(collection(db, 'users'), where('gamertagLower', '==', tag.toLowerCase()));
-    const snapshot = await getDocs(q);
-    return snapshot.empty;
-  };
-
   const handleNext = async () => {
     setErrorMsg(null);
 
     if (step === 1) {
-      setLoading(true);
-      try {
-        const isUnique = await checkGamertagUnique(gamertag);
-        if (!isUnique) {
-          setErrorMsg('This gamertag is already taken.');
-          setLoading(false);
-          return;
-        }
-        setStep(2);
-      } catch (err) {
-        console.error('Error checking gamertag:', err);
-        setErrorMsg('Failed to verify gamertag. Please try again.');
-      } finally {
-        setLoading(false);
+      if (tagStatus === 'taken') {
+        setErrorMsg('This gamertag is already taken.');
+        return;
       }
+      setStep(2);
     } else if (step === 2) {
       setStep(3);
     } else if (step === 3) {
@@ -99,14 +113,14 @@ export const OnboardingScreen: React.FC = () => {
   };
 
   const isStepValid = () => {
-    if (step === 1) return gamertag.trim().length >= 3;
+    if (step === 1) return gamertag.trim().length >= 3 && tagStatus === 'available';
     if (step === 2) return selectedPlatforms.length > 0;
     if (step === 3) return selectedGames.length > 0;
     return true;
   };
 
   return (
-    <div className="min-h-screen w-full bg-[#121212] text-white flex flex-col p-4 sm:p-8">
+    <div className="h-[100dvh] w-full bg-[#121212] text-white flex flex-col p-4 sm:p-8 overflow-hidden">
       {/* Header */}
       <header className="w-full flex items-center justify-between mb-8 sm:mb-16">
         <div className="flex items-center gap-3">
@@ -135,29 +149,38 @@ export const OnboardingScreen: React.FC = () => {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col max-w-2xl mx-auto w-full relative">
+      <main className="flex-1 flex flex-col max-w-2xl mx-auto w-full relative min-h-0">
         {errorMsg && (
           <div className="absolute top-0 left-0 right-0 p-3 bg-red-500/10 border border-red-500/50 rounded-lg text-red-400 text-sm font-mono text-center animate-in fade-in z-10">
             {errorMsg}
           </div>
         )}
-        <div className="pt-12">
+        <div className="pt-12 flex-1 overflow-y-auto min-h-0 pb-4">
           {step === 1 && (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div>
                 <h1 className="text-3xl sm:text-4xl font-bold mb-2">Claim your identity.</h1>
                 <p className="text-[#888888]">What should we call you on the grid?</p>
               </div>
-              <div className="pt-4">
+              <div className="pt-4 relative">
                 <input
                   type="text"
                   value={gamertag}
                   onChange={(e) => setGamertag(e.target.value)}
                   placeholder="Enter your Gamertag"
-                  className="w-full bg-transparent border-b-2 border-[#2a2a2e] focus:border-[#7A22EC] py-4 text-3xl font-bold outline-none transition-colors placeholder-[#333333]"
+                  className={`w-full bg-transparent border-b-2 py-4 pr-12 text-3xl font-bold outline-none transition-colors placeholder-[#333333] ${
+                    tagStatus === 'taken' ? 'border-red-500 focus:border-red-500' : 'border-[#2a2a2e] focus:border-[#7A22EC]'
+                  }`}
                   autoFocus
                 />
-                <p className="text-[#555555] text-xs font-mono mt-3">MINIMUM 3 CHARACTERS</p>
+                <div className="absolute right-2 top-8">
+                  {tagStatus === 'checking' && <Loader2 className="w-6 h-6 text-[#7A22EC] animate-spin" />}
+                  {tagStatus === 'available' && <CheckCircle2 className="w-6 h-6 text-green-500" />}
+                  {tagStatus === 'taken' && <XCircle className="w-6 h-6 text-red-500" />}
+                </div>
+                <p className={`text-xs font-mono mt-3 ${tagStatus === 'taken' ? 'text-red-400' : 'text-[#555555]'}`}>
+                  {tagStatus === 'taken' ? 'GAMERTAG ALREADY IN USE' : 'MINIMUM 3 CHARACTERS'}
+                </p>
               </div>
             </div>
           )}
