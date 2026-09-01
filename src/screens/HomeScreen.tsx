@@ -6,13 +6,23 @@ import { usePWAInstall } from '../hooks/usePWAInstall';
 export const HomeScreen: React.FC = () => {
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
   const [showIOSGuide, setShowIOSGuide] = React.useState(false);
+  const [logoError, setLogoError] = React.useState(false);
 
   return (
     <div className="min-h-screen w-full bg-[#121212] text-white flex flex-col items-center">
       {/* Top Navigation */}
       <header className="w-full bg-[#1a1a1a] border-b border-[#2a2a2e] px-4 py-3 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-2">
-          <GamersGridLogo size={28} color="#7A22EC" glow={true} />
+          {!logoError ? (
+            <img 
+              src="/logo.png" 
+              alt="Gamers Grid" 
+              className="h-7 w-auto object-contain" 
+              onError={() => setLogoError(true)} 
+            />
+          ) : (
+            <GamersGridLogo size={28} color="#7A22EC" glow={true} />
+          )}
           <span className="font-mono font-bold tracking-widest text-[#eeeeee]">GAMERS GRID</span>
         </div>
         <div className="flex items-center gap-3">

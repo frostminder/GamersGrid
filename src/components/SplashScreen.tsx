@@ -241,7 +241,19 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
 
           {errorMsg && !isLoaded && (
             <div className="flex flex-col items-center justify-center space-y-4">
-              <GamersGridLogo size={96} color="#7A22EC" glow={true} />
+              <img 
+                src="/logo.png" 
+                alt="Gamers Grid" 
+                className="w-24 h-auto object-contain drop-shadow-[0_0_15px_rgba(122,34,236,0.8)]"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                  const fallback = e.currentTarget.nextElementSibling;
+                  if (fallback) (fallback as HTMLElement).style.display = 'block';
+                }}
+              />
+              <div style={{ display: 'none' }}>
+                <GamersGridLogo size={96} color="#7A22EC" glow={true} />
+              </div>
             </div>
           )}
         </div>
