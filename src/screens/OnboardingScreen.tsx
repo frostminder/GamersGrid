@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GamersGridLogo } from '../components/GamersGridLogo';
 import { Check, ChevronRight, Gamepad2, Monitor, Smartphone, Tv } from 'lucide-react';
+import { auth, db } from '../lib/firebase';
+import { collection, query, where, getDocs, doc, setDoc } from 'firebase/firestore';
 
 const PLATFORMS = [
   { id: 'pc', label: 'PC', icon: Monitor },
@@ -29,6 +31,8 @@ export const OnboardingScreen: React.FC = () => {
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [selectedGames, setSelectedGames] = useState<string[]>([]);
   const [logoError, setLogoError] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const togglePlatform = (id: string) => {
     setSelectedPlatforms(prev => 
@@ -42,12 +46,55 @@ export const OnboardingScreen: React.FC = () => {
     );
   };
 
-  const handleNext = () => {
-    if (step < 3) {
-      setStep(step + 1);
-    } else {
-      // In a real app, we would save this to Firestore here under the user's document
-      navigate('/home');
+  const checkGamertagUnique = async (tag: string) => {
+    const q = query(collection(db, 'users'), where('gamertagLower', '==', tag.toLowerCase()));
+    const snapshot = await getDocs(q);
+    return snapshot.empty;
+  };
+
+  const handleNext = async () => {
+    setErrorMsg(null);
+
+    if (step === 1) {
+      setLoading(true);
+      try {
+        const isUnique = await checkGamertagUnique(gamertag);
+        if (!isUnique) {
+          setErrorMsg('This gamertag is already taken.');
+          setLoading(false);
+          return;
+        }
+        setStep(2);
+      } catch (err) {
+        console.error('Error checking gamertag:', err);
+        setErrorMsg('Failed to verify gamertag. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    } else if (step === 2) {
+      setStep(3);
+    } else if (step === 3) {
+      setLoading(true);
+      try {
+        const user = auth.currentUser;
+        if (!user) throw new Error('No authenticated user found.');
+
+        await setDoc(doc(db, 'users', user.uid), {
+          gamertag: gamertag,
+          gamertagLower: gamertag.toLowerCase(),
+          platforms: selectedPlatforms,
+          games: selectedGames,
+          createdAt: new Date().toISOString(),
+          photoURL: user.photoURL || null,
+          email: user.email,
+        });
+        navigate('/home');
+      } catch (err) {
+        console.error('Error saving profile:', err);
+        setErrorMsg('Failed to save profile. Please try again.');
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -88,8 +135,13 @@ export const OnboardingScreen: React.FC = () => {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col max-w-2xl mx-auto w-full">
-        <div className="flex-1">
+      <main className="flex-1 flex flex-col max-w-2xl mx-auto w-full relative">
+        {errorMsg && (
+          <div className="absolute top-0 left-0 right-0 p-3 bg-red-500/10 border border-red-500/50 rounded-lg text-red-400 text-sm font-mono text-center animate-in fade-in z-10">
+            {errorMsg}
+          </div>
+        )}
+        <div className="flex-1 pt-12">
           {step === 1 && (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div>
@@ -172,11 +224,17 @@ export const OnboardingScreen: React.FC = () => {
         <div className="pt-8 pb-4 flex justify-end">
           <button
             onClick={handleNext}
-            disabled={!isStepValid()}
+            disabled={!isStepValid() || loading}
             className="bg-white text-black hover:bg-gray-200 disabled:bg-[#333333] disabled:text-[#555555] font-bold py-4 px-8 rounded-full flex items-center gap-2 transition-colors duration-200"
           >
-            {step === 3 ? 'COMPLETE SETUP' : 'CONTINUE'}
-            <ChevronRight className="w-5 h-5" />
+            {loading ? (
+              <span className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <>
+                {step === 3 ? 'COMPLETE SETUP' : 'CONTINUE'}
+                <ChevronRight className="w-5 h-5" />
+              </>
+            )}
           </button>
         </div>
       </main>

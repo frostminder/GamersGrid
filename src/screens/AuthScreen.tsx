@@ -13,6 +13,17 @@ export const AuthScreen: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [logoError, setLogoError] = useState(false);
 
+  const mapAuthError = (err: any) => {
+    const code = err.code || '';
+    if (code === 'auth/email-already-in-use') return 'An account with this email already exists.';
+    if (code === 'auth/invalid-email') return 'Please enter a valid email address.';
+    if (code === 'auth/invalid-credential' || code === 'auth/wrong-password') return 'Invalid email or password.';
+    if (code === 'auth/weak-password') return 'Password must be at least 6 characters.';
+    if (code === 'auth/unauthorized-domain') return 'Domain not authorized for authentication. Please add it to Firebase Console > Authentication > Settings > Authorized domains.';
+    if (code === 'auth/popup-closed-by-user') return 'Sign-in popup was closed before completion.';
+    return err.message || 'Authentication failed. Please try again.';
+  };
+
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -26,7 +37,7 @@ export const AuthScreen: React.FC = () => {
       navigate('/onboarding');
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Authentication failed. Please try again.');
+      setError(mapAuthError(err));
     } finally {
       setLoading(false);
     }
@@ -42,7 +53,7 @@ export const AuthScreen: React.FC = () => {
       navigate('/onboarding');
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Google Sign-In failed.');
+      setError(mapAuthError(err));
     } finally {
       setLoading(false);
     }
