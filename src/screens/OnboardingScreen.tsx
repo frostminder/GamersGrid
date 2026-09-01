@@ -141,7 +141,7 @@ export const OnboardingScreen: React.FC = () => {
             {errorMsg}
           </div>
         )}
-        <div className="flex-1 pt-12">
+        <div className="pt-12">
           {step === 1 && (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
               <div>
