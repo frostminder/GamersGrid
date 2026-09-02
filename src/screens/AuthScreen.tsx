@@ -104,7 +104,7 @@ export const AuthScreen: React.FC = () => {
   if (checkingAuth) {
     return (
       <div className="h-[100dvh] w-full bg-[#121212] flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-[#7A22EC] border-t-transparent rounded-full animate-spin"></div>
+        <div className="w-8 h-8 border-4 border-[#5003BD] border-t-transparent rounded-full animate-spin"></div>
       </div>
     );
   }
@@ -130,12 +130,12 @@ export const AuthScreen: React.FC = () => {
             <img 
               src="/logo.png" 
               alt="Gamers Grid" 
-              className="h-16 w-auto object-contain mb-4 drop-shadow-[0_0_15px_rgba(122,34,236,0.5)]"
+              className="h-16 w-auto object-contain mb-4 drop-shadow-[0_0_15px_rgba(80,3,189,0.5)]"
               onError={() => setLogoError(true)} 
             />
           ) : (
             <div className="mb-4">
-              <GamersGridLogo size={64} color="#7A22EC" glow={true} />
+              <GamersGridLogo size={64} color="#5003BD" glow={true} />
             </div>
           )}
           <h1 className="text-2xl font-mono font-bold tracking-widest text-[#eeeeee]">GAMERS GRID</h1>
@@ -183,7 +183,7 @@ export const AuthScreen: React.FC = () => {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-[#121212] border border-[#2a2a2e] rounded-xl py-3 pl-10 pr-4 text-white placeholder-[#555555] focus:outline-none focus:border-[#7A22EC] transition-colors"
+                    className="w-full bg-[#121212] border border-[#2a2a2e] rounded-xl py-3 pl-10 pr-4 text-white placeholder-[#555555] focus:outline-none focus:border-[#5003BD] transition-colors"
                     placeholder="player@example.com"
                     required
                   />
@@ -193,7 +193,7 @@ export const AuthScreen: React.FC = () => {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-[#7A22EC] hover:bg-[#6818dd] text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-4"
+                className="w-full bg-[#5003BD] hover:bg-[#3d0291] text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-4"
               >
                 {loading ? (
                   <span className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
@@ -226,7 +226,7 @@ export const AuthScreen: React.FC = () => {
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full bg-[#121212] border border-[#2a2a2e] rounded-xl py-3 pl-10 pr-4 text-white placeholder-[#555555] focus:outline-none focus:border-[#7A22EC] transition-colors"
+                      className="w-full bg-[#121212] border border-[#2a2a2e] rounded-xl py-3 pl-10 pr-4 text-white placeholder-[#555555] focus:outline-none focus:border-[#5003BD] transition-colors"
                       placeholder="player@example.com"
                       required
                     />
@@ -243,7 +243,7 @@ export const AuthScreen: React.FC = () => {
                       type="password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full bg-[#121212] border border-[#2a2a2e] rounded-xl py-3 pl-10 pr-4 text-white placeholder-[#555555] focus:outline-none focus:border-[#7A22EC] transition-colors"
+                      className="w-full bg-[#121212] border border-[#2a2a2e] rounded-xl py-3 pl-10 pr-4 text-white placeholder-[#555555] focus:outline-none focus:border-[#5003BD] transition-colors"
                       placeholder="••••••••"
                       required
                     />
@@ -258,7 +258,7 @@ export const AuthScreen: React.FC = () => {
                         setIsForgotPassword(true);
                         setError(null);
                       }}
-                      className="text-xs font-mono text-[#7A22EC] hover:text-[#9b51f0] transition-colors font-bold mr-1"
+                      className="text-xs font-mono text-[#5003BD] hover:text-[#9b51f0] transition-colors font-bold mr-1"
                     >
                       FORGOT PASSWORD?
                     </button>
@@ -268,7 +268,7 @@ export const AuthScreen: React.FC = () => {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full bg-[#7A22EC] hover:bg-[#6818dd] text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-2"
+                  className="w-full bg-[#5003BD] hover:bg-[#3d0291] text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-2"
                 >
                   {loading ? (
                     <span className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
@@ -305,7 +305,7 @@ export const AuthScreen: React.FC = () => {
             {isLogin ? "DON'T HAVE AN ACCOUNT?" : "ALREADY REGISTERED?"}{' '}
             <button 
               onClick={() => setIsLogin(!isLogin)}
-              className="text-[#7A22EC] hover:text-[#9b51f0] font-bold underline decoration-[#7A22EC]/30 underline-offset-4 transition-colors"
+              className="text-[#5003BD] hover:text-[#9b51f0] font-bold underline decoration-[#5003BD]/30 underline-offset-4 transition-colors"
             >
               {isLogin ? 'SIGN UP' : 'SIGN IN'}
             </button>

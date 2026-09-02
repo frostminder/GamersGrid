@@ -5,6 +5,8 @@ import { usePWAInstall } from '../hooks/usePWAInstall';
 import { auth } from '../lib/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
+import { ProfileTab } from '../components/ProfileTab';
+import { TournamentHub } from '../components/TournamentHub';
 
 export const HomeScreen: React.FC = () => {
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
@@ -28,88 +30,103 @@ export const HomeScreen: React.FC = () => {
   return (
     <div className="min-h-screen w-full bg-[#121212] text-white flex flex-col items-center pb-24">
       {/* Premium Top Navigation */}
-      <header className="w-full bg-[#121212]/80 backdrop-blur-xl border-b border-[#2a2a2e] px-4 py-3 flex items-center justify-between sticky top-0 z-50">
-        <div className="flex items-center gap-3">
-          {!logoError ? (
-            <img 
-              src="/logo.png" 
-              alt="GamersGrid" 
-              className="h-8 w-auto object-contain drop-shadow-[0_0_8px_rgba(122,34,236,0.5)]" 
-              onError={() => setLogoError(true)} 
-            />
-          ) : (
-            <GamersGridLogo size={32} color="#7A22EC" glow={true} />
-          )}
-          <span className="font-mono font-bold tracking-widest text-white hidden sm:block">GAMERS GRID</span>
-        </div>
-        
-        <div className="flex items-center gap-4">
-          {/* Notification Bell */}
-          <button className="relative p-2 rounded-full hover:bg-[#2a2a2e] transition-colors group">
-            <Bell className="w-5 h-5 text-[#aaaaaa] group-hover:text-white transition-colors" />
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#7A22EC] rounded-full border border-[#121212]"></span>
-          </button>
+      {activeTab !== 'profile' && (
+        <header className="w-full bg-[#121212]/80 backdrop-blur-xl border-b border-[#2a2a2e] px-4 py-3 flex items-center justify-between sticky top-0 z-50">
+          <div className="flex items-center gap-3">
+            {!logoError ? (
+              <img 
+                src="/logo.png" 
+                alt="GamersGrid" 
+                className="h-8 w-auto object-contain drop-shadow-[0_0_8px_rgba(80,3,189,0.5)]" 
+                onError={() => setLogoError(true)} 
+              />
+            ) : (
+              <GamersGridLogo size={32} color="#5003BD" glow={true} />
+            )}
+            <span className="font-mono font-bold tracking-widest text-white hidden sm:block">GAMERS GRID</span>
+          </div>
           
-          {/* User Avatar */}
-          <div className="h-9 w-9 rounded-full bg-gradient-to-tr from-[#5003BD] to-[#7A22EC] p-[2px] cursor-pointer hover:scale-105 transition-transform">
-            <div className="w-full h-full rounded-full bg-[#1a1a1a] flex items-center justify-center overflow-hidden">
-              {user?.photoURL ? (
-                <img src={user.photoURL} alt="Profile" className="w-full h-full object-cover" />
-              ) : (
-                <span className="font-bold text-sm text-white">{user?.email?.[0].toUpperCase() || 'G'}</span>
-              )}
+          <div className="flex items-center gap-4">
+            {/* Notification Bell */}
+            <button className="relative p-2 rounded-full hover:bg-[#2a2a2e] transition-colors group">
+              <Bell className="w-5 h-5 text-[#aaaaaa] group-hover:text-white transition-colors" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#5003BD] rounded-full border border-[#121212]"></span>
+            </button>
+            
+            {/* User Avatar */}
+            <div className="h-9 w-9 rounded-full bg-gradient-to-tr bg-[#5003BD] p-[2px] cursor-pointer hover:scale-105 transition-transform">
+              <div className="w-full h-full rounded-full bg-[#1a1a1a] flex items-center justify-center overflow-hidden">
+                {user?.photoURL ? (
+                  <img src={user.photoURL} alt="Profile" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="font-bold text-sm text-white">{user?.email?.[0].toUpperCase() || 'G'}</span>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      </header>
+        </header>
+      )}
 
-        {/* Main Content Area */}
-      <main className="flex-1 w-full max-w-4xl px-4 py-6 flex flex-col gap-6">
+      {/* Main Content Area */}
+      <main className={`flex-1 w-full flex flex-col ${activeTab === 'profile' ? 'p-0 gap-0 max-w-none' : 'max-w-4xl px-4 py-6 gap-6'}`}>
         
-        {/* Quick Stats / Welcome */}
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <h1 className="text-2xl font-bold text-white">Welcome back.</h1>
-            <p className="text-[#888888] text-sm">Ready to dominate the grid?</p>
-          </div>
-          <div className="flex items-center gap-1.5 text-xs font-mono text-[#888888] bg-[#1a1a1a] px-3 py-1.5 rounded-full border border-[#2a2a2e] shadow-inner">
-            <Wifi className="w-3.5 h-3.5 text-[#7A22EC] animate-pulse" />
-            <span className="text-[#eeeeee]">ONLINE</span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-[#1a1a1a] border border-[#2a2a2e] rounded-2xl p-6 flex flex-col items-start justify-center min-h-[180px] hover:border-[#5003BD] hover:bg-[#1c1c20] transition-all cursor-pointer group shadow-lg">
-            <div className="p-3 bg-[#121212] rounded-xl mb-4 group-hover:scale-110 transition-transform duration-300">
-              <LayoutDashboard className="w-8 h-8 text-[#7A22EC]" />
+        {activeTab === 'home' && (
+          <>
+            {/* Quick Stats / Welcome */}
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <h1 className="text-2xl font-bold text-white">Welcome back.</h1>
+                <p className="text-[#888888] text-sm">Ready to dominate the grid?</p>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs font-mono text-[#888888] bg-[#1a1a1a] px-3 py-1.5 rounded-full border border-[#2a2a2e] shadow-inner">
+                <Wifi className="w-3.5 h-3.5 text-[#5003BD] animate-pulse" />
+                <span className="text-[#eeeeee]">ONLINE</span>
+              </div>
             </div>
-            <h2 className="text-xl font-bold">Dashboard</h2>
-            <p className="text-sm text-[#777777] mt-1">View your stats and current standing.</p>
-          </div>
 
-          <div className="bg-[#1a1a1a] border border-[#2a2a2e] rounded-2xl p-6 flex flex-col items-start justify-center min-h-[180px] hover:border-[#5003BD] hover:bg-[#1c1c20] transition-all cursor-pointer group shadow-lg">
-            <div className="p-3 bg-[#121212] rounded-xl mb-4 group-hover:scale-110 transition-transform duration-300">
-              <Users className="w-8 h-8 text-[#7A22EC]" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-[#1a1a1a] border border-[#2a2a2e] rounded-2xl p-6 flex flex-col items-start justify-center min-h-[180px] hover:border-[#5003BD] hover:bg-[#1c1c20] transition-all cursor-pointer group shadow-lg">
+                <div className="p-3 bg-[#121212] rounded-xl mb-4 group-hover:scale-110 transition-transform duration-300">
+                  <LayoutDashboard className="w-8 h-8 text-[#5003BD]" />
+                </div>
+                <h2 className="text-xl font-bold">Dashboard</h2>
+                <p className="text-sm text-[#777777] mt-1">View your stats and current standing.</p>
+              </div>
+
+              <div className="bg-[#1a1a1a] border border-[#2a2a2e] rounded-2xl p-6 flex flex-col items-start justify-center min-h-[180px] hover:border-[#5003BD] hover:bg-[#1c1c20] transition-all cursor-pointer group shadow-lg">
+                <div className="p-3 bg-[#121212] rounded-xl mb-4 group-hover:scale-110 transition-transform duration-300">
+                  <Users className="w-8 h-8 text-[#5003BD]" />
+                </div>
+                <h2 className="text-xl font-bold">Tournaments</h2>
+                <p className="text-sm text-[#777777] mt-1">Join open lobbies and track brackets.</p>
+              </div>
             </div>
-            <h2 className="text-xl font-bold">Tournaments</h2>
-            <p className="text-sm text-[#777777] mt-1">Join open lobbies and track brackets.</p>
-          </div>
-        </div>
+          </>
+        )}
+
+        {activeTab === 'tournaments' && (
+          <TournamentHub />
+        )}
+
+        {activeTab === 'profile' && (
+          <ProfileTab />
+        )}
+
       </main>
 
       {/* PWA Install Modal (Android/Desktop) */}
       {(!isInstalled && isInstallable && !dismissInstall) && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-3xl bg-[#1c1c1f] border border-[#7A22EC]/30 p-8 shadow-[0_0_50px_rgba(122,34,236,0.15)] animate-in zoom-in-95 duration-300 flex flex-col items-center text-center relative">
+          <div className="w-full max-w-sm rounded-3xl bg-[#1c1c1f] border border-[#5003BD]/30 p-8 shadow-[0_0_50px_rgba(80,3,189,0.15)] animate-in zoom-in-95 duration-300 flex flex-col items-center text-center relative">
             <button 
               onClick={() => setDismissInstall(true)}
               className="absolute top-4 right-4 text-[#888888] hover:text-white transition-colors"
             >
               ✕
             </button>
-            <div className="w-16 h-16 bg-gradient-to-tr from-[#5003BD] to-[#7A22EC] rounded-2xl p-1 shadow-lg mb-6">
+            <div className="w-16 h-16 bg-gradient-to-tr bg-[#5003BD] rounded-2xl p-1 shadow-lg mb-6">
               <div className="w-full h-full bg-[#121212] rounded-xl flex items-center justify-center">
-                <GamersGridLogo size={32} color="#7A22EC" glow={true} />
+                <GamersGridLogo size={32} color="#5003BD" glow={true} />
               </div>
             </div>
             <h3 className="text-2xl font-bold text-white mb-2">Install Gamers Grid</h3>
@@ -119,7 +136,7 @@ export const HomeScreen: React.FC = () => {
             <div className="w-full flex flex-col gap-3">
               <button
                 onClick={install}
-                className="w-full rounded-xl bg-[#7A22EC] hover:bg-[#6818dd] py-4 text-sm font-bold text-white transition-colors shadow-[0_0_15px_rgba(122,34,236,0.4)]"
+                className="w-full rounded-xl bg-[#5003BD] hover:bg-[#3d0291] py-4 text-sm font-bold text-white transition-colors shadow-[0_0_15px_rgba(80,3,189,0.4)]"
               >
                 INSTALL APP
               </button>
@@ -131,16 +148,16 @@ export const HomeScreen: React.FC = () => {
       {/* iOS Install Prompt Overlay */}
       {(!isInstalled && isIOS && !showIOSGuide && !dismissInstall) && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-3xl bg-[#1c1c1f] border border-[#7A22EC]/30 p-8 shadow-[0_0_50px_rgba(122,34,236,0.15)] animate-in zoom-in-95 duration-300 flex flex-col items-center text-center relative">
+          <div className="w-full max-w-sm rounded-3xl bg-[#1c1c1f] border border-[#5003BD]/30 p-8 shadow-[0_0_50px_rgba(80,3,189,0.15)] animate-in zoom-in-95 duration-300 flex flex-col items-center text-center relative">
             <button 
               onClick={() => setDismissInstall(true)}
               className="absolute top-4 right-4 text-[#888888] hover:text-white transition-colors"
             >
               ✕
             </button>
-            <div className="w-16 h-16 bg-gradient-to-tr from-[#5003BD] to-[#7A22EC] rounded-2xl p-1 shadow-lg mb-6">
+            <div className="w-16 h-16 bg-gradient-to-tr bg-[#5003BD] rounded-2xl p-1 shadow-lg mb-6">
               <div className="w-full h-full bg-[#121212] rounded-xl flex items-center justify-center">
-                <GamersGridLogo size={32} color="#7A22EC" glow={true} />
+                <GamersGridLogo size={32} color="#5003BD" glow={true} />
               </div>
             </div>
             <h3 className="text-2xl font-bold text-white mb-2">Install Gamers Grid</h3>
@@ -150,7 +167,7 @@ export const HomeScreen: React.FC = () => {
             <div className="w-full flex flex-col gap-3">
               <button
                 onClick={() => setShowIOSGuide(true)}
-                className="w-full rounded-xl bg-[#7A22EC] hover:bg-[#6818dd] py-4 text-sm font-bold text-white transition-colors shadow-[0_0_15px_rgba(122,34,236,0.4)]"
+                className="w-full rounded-xl bg-[#5003BD] hover:bg-[#3d0291] py-4 text-sm font-bold text-white transition-colors shadow-[0_0_15px_rgba(80,3,189,0.4)]"
               >
                 HOW TO INSTALL
               </button>
@@ -175,10 +192,10 @@ export const HomeScreen: React.FC = () => {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex flex-col items-center justify-center gap-1 w-16 transition-colors ${
-                  isActive ? 'text-[#7A22EC]' : 'text-[#777777] hover:text-[#aaaaaa]'
+                  isActive ? 'text-[#5003BD]' : 'text-[#777777] hover:text-[#aaaaaa]'
                 }`}
               >
-                <div className={`p-1.5 rounded-xl transition-all duration-300 ${isActive ? 'bg-[#7A22EC]/10' : ''}`}>
+                <div className={`p-1.5 rounded-xl transition-all duration-300 ${isActive ? 'bg-[#5003BD]/10' : ''}`}>
                   <Icon className="w-6 h-6" strokeWidth={isActive ? 2.5 : 2} />
                 </div>
                 <span className={`text-[10px] font-bold ${isActive ? 'text-white' : ''}`}>

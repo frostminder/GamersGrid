@@ -132,7 +132,7 @@ export const OnboardingScreen: React.FC = () => {
               onError={() => setLogoError(true)} 
             />
           ) : (
-            <GamersGridLogo size={32} color="#7A22EC" glow={true} />
+            <GamersGridLogo size={32} color="#5003BD" glow={true} />
           )}
           <span className="font-mono font-bold tracking-widest hidden sm:block">GAMERS GRID</span>
         </div>
@@ -141,7 +141,7 @@ export const OnboardingScreen: React.FC = () => {
             <div 
               key={i} 
               className={`h-1.5 rounded-full transition-all duration-300 ${
-                i === step ? 'w-8 bg-[#7A22EC]' : i < step ? 'w-4 bg-[#7A22EC]/50' : 'w-4 bg-[#2a2a2e]'
+                i === step ? 'w-8 bg-[#5003BD]' : i < step ? 'w-4 bg-[#5003BD]/50' : 'w-4 bg-[#2a2a2e]'
               }`}
             />
           ))}
@@ -169,12 +169,12 @@ export const OnboardingScreen: React.FC = () => {
                   onChange={(e) => setGamertag(e.target.value)}
                   placeholder="Enter your Gamertag"
                   className={`w-full bg-transparent border-b-2 py-4 pr-12 text-3xl font-bold outline-none transition-colors placeholder-[#333333] ${
-                    tagStatus === 'taken' ? 'border-red-500 focus:border-red-500' : 'border-[#2a2a2e] focus:border-[#7A22EC]'
+                    tagStatus === 'taken' ? 'border-red-500 focus:border-red-500' : 'border-[#2a2a2e] focus:border-[#5003BD]'
                   }`}
                   autoFocus
                 />
                 <div className="absolute right-2 top-8">
-                  {tagStatus === 'checking' && <Loader2 className="w-6 h-6 text-[#7A22EC] animate-spin" />}
+                  {tagStatus === 'checking' && <Loader2 className="w-6 h-6 text-[#5003BD] animate-spin" />}
                   {tagStatus === 'available' && <CheckCircle2 className="w-6 h-6 text-green-500" />}
                   {tagStatus === 'taken' && <XCircle className="w-6 h-6 text-red-500" />}
                 </div>
@@ -201,7 +201,7 @@ export const OnboardingScreen: React.FC = () => {
                       onClick={() => togglePlatform(platform.id)}
                       className={`p-6 rounded-2xl border-2 flex flex-col items-center justify-center gap-4 transition-all duration-200 ${
                         isSelected 
-                          ? 'border-[#7A22EC] bg-[#7A22EC]/10 text-white' 
+                          ? 'border-[#5003BD] bg-[#5003BD]/10 text-white' 
                           : 'border-[#2a2a2e] bg-[#1a1a1a] text-[#888888] hover:border-[#555555]'
                       }`}
                     >
@@ -229,7 +229,7 @@ export const OnboardingScreen: React.FC = () => {
                       onClick={() => toggleGame(game)}
                       className={`px-5 py-3 rounded-full border transition-all duration-200 flex items-center gap-2 ${
                         isSelected 
-                          ? 'border-[#7A22EC] bg-[#7A22EC] text-white font-bold shadow-[0_0_15px_rgba(122,34,236,0.4)]' 
+                          ? 'border-[#5003BD] bg-[#5003BD] text-white font-bold shadow-[0_0_15px_rgba(80,3,189,0.4)]' 
                           : 'border-[#2a2a2e] bg-[#1a1a1a] text-[#aaaaaa] hover:bg-[#2a2a2e]'
                       }`}
                     >
