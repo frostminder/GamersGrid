@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GamersGridLogo } from '../components/GamersGridLogo';
-import { auth, googleProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword } from '../lib/firebase';
-import { Mail, Lock, ArrowRight, Chrome } from 'lucide-react';
+import { auth, googleProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from '../lib/firebase';
+import { Mail, Lock, ArrowRight, Chrome, ArrowLeft } from 'lucide-react';
 
 export const AuthScreen: React.FC = () => {
   const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(false);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -21,7 +23,27 @@ export const AuthScreen: React.FC = () => {
     if (code === 'auth/weak-password') return 'Password must be at least 6 characters.';
     if (code === 'auth/unauthorized-domain') return 'Domain not authorized for authentication. Please add it to Firebase Console > Authentication > Settings > Authorized domains.';
     if (code === 'auth/popup-closed-by-user') return 'Sign-in popup was closed before completion.';
+    if (code === 'auth/user-not-found') return 'No user found with this email address.';
     return err.message || 'Authentication failed. Please try again.';
+  };
+
+  const handlePasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) {
+      setError('Please enter your email address first.');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setResetSent(true);
+    } catch (err: any) {
+      console.error(err);
+      setError(mapAuthError(err));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleEmailAuth = async (e: React.FormEvent) => {
@@ -99,83 +121,167 @@ export const AuthScreen: React.FC = () => {
             </div>
           )}
 
-          <form onSubmit={handleEmailAuth} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-mono text-[#aaaaaa] ml-1">EMAIL ADDRESS</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Mail className="h-4 w-4 text-[#555555]" />
-                </div>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-[#121212] border border-[#2a2a2e] rounded-xl py-3 pl-10 pr-4 text-white placeholder-[#555555] focus:outline-none focus:border-[#7A22EC] transition-colors"
-                  placeholder="player@example.com"
-                  required
-                />
+          {resetSent && isForgotPassword ? (
+            <div className="text-center space-y-4 animate-in fade-in">
+              <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-xl text-green-400 text-sm mb-6">
+                Password reset email sent! Please check your inbox for instructions to reset your password.
               </div>
+              <button
+                onClick={() => {
+                  setIsForgotPassword(false);
+                  setResetSent(false);
+                  setError(null);
+                }}
+                className="w-full bg-[#2a2a2e] hover:bg-[#383842] text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                BACK TO LOGIN
+              </button>
             </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-mono text-[#aaaaaa] ml-1">PASSWORD</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Lock className="h-4 w-4 text-[#555555]" />
-                </div>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-[#121212] border border-[#2a2a2e] rounded-xl py-3 pl-10 pr-4 text-white placeholder-[#555555] focus:outline-none focus:border-[#7A22EC] transition-colors"
-                  placeholder="••••••••"
-                  required
-                />
+          ) : isForgotPassword ? (
+            <form onSubmit={handlePasswordReset} className="space-y-4 animate-in fade-in">
+              <div className="mb-6">
+                <h3 className="text-xl font-bold mb-2">Reset Password</h3>
+                <p className="text-[#888888] text-sm">Enter your email address and we'll send you a link to reset your password.</p>
               </div>
-            </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-[#7A22EC] hover:bg-[#6818dd] text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-2"
-            >
-              {loading ? (
-                <span className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-              ) : (
-                <>
-                  {isLogin ? 'SIGN IN' : 'CREATE ACCOUNT'}
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </button>
-          </form>
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-[#aaaaaa] ml-1">EMAIL ADDRESS</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Mail className="h-4 w-4 text-[#555555]" />
+                  </div>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full bg-[#121212] border border-[#2a2a2e] rounded-xl py-3 pl-10 pr-4 text-white placeholder-[#555555] focus:outline-none focus:border-[#7A22EC] transition-colors"
+                    placeholder="player@example.com"
+                    required
+                  />
+                </div>
+              </div>
 
-          <div className="mt-6 flex items-center gap-4">
-            <div className="flex-1 h-px bg-[#2a2a2e]"></div>
-            <span className="text-xs font-mono text-[#555555]">OR</span>
-            <div className="flex-1 h-px bg-[#2a2a2e]"></div>
-          </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-[#7A22EC] hover:bg-[#6818dd] text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-4"
+              >
+                {loading ? (
+                  <span className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                ) : (
+                  'SEND RESET LINK'
+                )}
+              </button>
 
-          <button
-            onClick={handleGoogleAuth}
-            disabled={loading}
-            className="mt-6 w-full bg-white text-black hover:bg-gray-100 font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-3 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Chrome className="w-5 h-5" />
-            CONTINUE WITH GOOGLE
-          </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsForgotPassword(false);
+                  setError(null);
+                }}
+                className="w-full bg-transparent hover:bg-[#2a2a2e] text-[#aaaaaa] hover:text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors mt-2"
+              >
+                CANCEL
+              </button>
+            </form>
+          ) : (
+            <>
+              <form onSubmit={handleEmailAuth} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-mono text-[#aaaaaa] ml-1">EMAIL ADDRESS</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Mail className="h-4 w-4 text-[#555555]" />
+                    </div>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full bg-[#121212] border border-[#2a2a2e] rounded-xl py-3 pl-10 pr-4 text-white placeholder-[#555555] focus:outline-none focus:border-[#7A22EC] transition-colors"
+                      placeholder="player@example.com"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-end">
+                    <label className="text-xs font-mono text-[#aaaaaa] ml-1">PASSWORD</label>
+                    {isLogin && (
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setIsForgotPassword(true);
+                          setError(null);
+                        }}
+                        className="text-xs text-[#7A22EC] hover:text-[#9b51f0] transition-colors mr-1 font-bold"
+                      >
+                        FORGOT PASSWORD?
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Lock className="h-4 w-4 text-[#555555]" />
+                    </div>
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full bg-[#121212] border border-[#2a2a2e] rounded-xl py-3 pl-10 pr-4 text-white placeholder-[#555555] focus:outline-none focus:border-[#7A22EC] transition-colors"
+                      placeholder="••••••••"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-[#7A22EC] hover:bg-[#6818dd] text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-2"
+                >
+                  {loading ? (
+                    <span className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      {isLogin ? 'SIGN IN' : 'CREATE ACCOUNT'}
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </form>
+
+              <div className="mt-6 flex items-center gap-4">
+                <div className="flex-1 h-px bg-[#2a2a2e]"></div>
+                <span className="text-xs font-mono text-[#555555]">OR</span>
+                <div className="flex-1 h-px bg-[#2a2a2e]"></div>
+              </div>
+
+              <button
+                onClick={handleGoogleAuth}
+                disabled={loading}
+                className="mt-6 w-full bg-white text-black hover:bg-gray-100 font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-3 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Chrome className="w-5 h-5" />
+                CONTINUE WITH GOOGLE
+              </button>
+            </>
+          )}
         </div>
 
         {/* Toggle Mode */}
-        <p className="mt-8 text-sm text-[#777777] font-mono">
-          {isLogin ? "DON'T HAVE AN ACCOUNT?" : "ALREADY REGISTERED?"}{' '}
-          <button 
-            onClick={() => setIsLogin(!isLogin)}
-            className="text-[#7A22EC] hover:text-[#9b51f0] font-bold underline decoration-[#7A22EC]/30 underline-offset-4 transition-colors"
-          >
-            {isLogin ? 'SIGN UP' : 'SIGN IN'}
-          </button>
-        </p>
+        {!isForgotPassword && (
+          <p className="mt-8 text-sm text-[#777777] font-mono">
+            {isLogin ? "DON'T HAVE AN ACCOUNT?" : "ALREADY REGISTERED?"}{' '}
+            <button 
+              onClick={() => setIsLogin(!isLogin)}
+              className="text-[#7A22EC] hover:text-[#9b51f0] font-bold underline decoration-[#7A22EC]/30 underline-offset-4 transition-colors"
+            >
+              {isLogin ? 'SIGN UP' : 'SIGN IN'}
+            </button>
+          </p>
+        )}
       </div>
     </div>
   );
