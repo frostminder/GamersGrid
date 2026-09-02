@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { ProfileTab } from '../components/ProfileTab';
 import { TournamentHub } from '../components/TournamentHub';
 import { SearchMockup, CreateMockup, MessagesMockup, SettingsMockup } from '../components/MockupScreens';
+import { MOCK_TOURNAMENTS, INITIAL_WALLET } from '../types/mockData';
 
 export const HomeScreen: React.FC = () => {
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
@@ -109,7 +110,12 @@ export const HomeScreen: React.FC = () => {
         )}
 
         {activeTab === 'tournaments' && (
-          <TournamentHub />
+          <TournamentHub 
+            tournaments={MOCK_TOURNAMENTS} 
+            wallet={INITIAL_WALLET} 
+            onJoinTournament={() => {}} 
+            onOpenWallet={() => {}} 
+          />
         )}
 
         {activeTab === 'search' && (
