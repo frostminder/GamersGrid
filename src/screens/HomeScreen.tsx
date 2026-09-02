@@ -4,6 +4,7 @@ import { GamersGridLogo } from '../components/GamersGridLogo';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { auth } from '../lib/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { useNavigate } from 'react-router-dom';
 
 export const HomeScreen: React.FC = () => {
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
@@ -12,9 +13,13 @@ export const HomeScreen: React.FC = () => {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [activeTab, setActiveTab] = useState('home');
   const [dismissInstall, setDismissInstall] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      if (!currentUser) {
+        navigate("/auth");
+      }
       setUser(currentUser);
     });
     return () => unsubscribe();

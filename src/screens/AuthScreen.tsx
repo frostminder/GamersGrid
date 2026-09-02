@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GamersGridLogo } from '../components/GamersGridLogo';
-import { auth, googleProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from '../lib/firebase';
+import { auth, googleProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, db } from '../lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 import { Mail, Lock, ArrowRight, Chrome, ArrowLeft } from 'lucide-react';
 
 export const AuthScreen: React.FC = () => {
@@ -14,6 +16,28 @@ export const AuthScreen: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [logoError, setLogoError] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          if (userDoc.exists()) {
+            navigate('/home');
+          } else {
+            navigate('/onboarding');
+          }
+        } catch (err) {
+          console.error('Error checking user profile:', err);
+          setCheckingAuth(false);
+        }
+      } else {
+        setCheckingAuth(false);
+      }
+    });
+    return () => unsubscribe();
+  }, [navigate]);
 
   const mapAuthError = (err: any) => {
     const code = err.code || '';
@@ -56,11 +80,10 @@ export const AuthScreen: React.FC = () => {
       } else {
         await createUserWithEmailAndPassword(auth, email, password);
       }
-      navigate('/onboarding');
+      // Routing is handled by onAuthStateChanged observer
     } catch (err: any) {
       console.error(err);
       setError(mapAuthError(err));
-    } finally {
       setLoading(false);
     }
   };
@@ -70,16 +93,21 @@ export const AuthScreen: React.FC = () => {
     setError(null);
     try {
       await signInWithPopup(auth, googleProvider);
-      // For Google Auth, we could check if they are a new user to route to onboarding vs home.
-      // For now, we will route to onboarding for the demo flow.
-      navigate('/onboarding');
+      // Routing is handled by onAuthStateChanged observer
     } catch (err: any) {
       console.error(err);
       setError(mapAuthError(err));
-    } finally {
       setLoading(false);
     }
   };
+
+  if (checkingAuth) {
+    return (
+      <div className="h-[100dvh] w-full bg-[#121212] flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-[#7A22EC] border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="h-[100dvh] w-full bg-[#121212] text-white flex flex-col items-center justify-center p-4 relative overflow-hidden">
