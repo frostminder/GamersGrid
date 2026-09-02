@@ -36,16 +36,16 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onNavigate }) => {
     window.location.href = '/auth';
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, field: 'photoURL' | 'bannerURL') => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: 'photoURL' | 'bannerURL') => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();
-      img.onload = () => {
+      img.onload = async () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = field === 'bannerURL' ? 1200 : 400;
-        const MAX_HEIGHT = field === 'bannerURL' ? 600 : 400;
+        const MAX_WIDTH = field === 'bannerURL' ? 800 : 400;
+        const MAX_HEIGHT = field === 'bannerURL' ? 400 : 400;
         let width = img.width;
         let height = img.height;
 
@@ -64,12 +64,17 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onNavigate }) => {
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        const dataUrl = canvas.toDataURL('image/jpeg', field === 'bannerURL' ? 0.5 : 0.8);
         
         // Save to Firestore
         if (auth.currentUser) {
-          setDoc(doc(db, 'users', auth.currentUser.uid), { [field]: dataUrl }, { merge: true });
-          setProfile((prev: any) => ({ ...prev, [field]: dataUrl }));
+          try {
+            await setDoc(doc(db, 'users', auth.currentUser.uid), { [field]: dataUrl }, { merge: true });
+            setProfile((prev: any) => ({ ...prev, [field]: dataUrl }));
+          } catch (error) {
+            console.error('Error uploading image:', error);
+            alert('Failed to upload image. It might be too large.');
+          }
         }
       };
       img.src = event.target?.result as string;
@@ -114,7 +119,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onNavigate }) => {
         <div className="absolute inset-0 bg-gradient-to-t from-[#1c1c1f] to-transparent opacity-80" />
         
         {/* Settings */}
-        <div className="absolute top-4 right-4 flex items-center gap-3">
+        <div className="absolute top-4 right-4 flex items-center gap-3 z-20">
           <button 
             onClick={() => onNavigate && onNavigate('settings')}
             className="p-2.5 bg-black/40 hover:bg-black/60 backdrop-blur-md rounded-full transition-colors text-white border border-white/10 shadow-lg"
@@ -126,7 +131,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onNavigate }) => {
         {/* Edit Banner Button */}
         <button 
           onClick={() => bannerInputRef.current?.click()}
-          className="absolute bottom-4 right-4 p-2.5 bg-black/40 hover:bg-black/60 backdrop-blur-md rounded-full transition-colors text-white border border-white/10 shadow-lg"
+          className="absolute bottom-4 right-4 p-2.5 bg-black/40 hover:bg-black/60 backdrop-blur-md rounded-full transition-colors text-white border border-white/10 shadow-lg z-20"
         >
           <Camera className="w-5 h-5" />
         </button>
