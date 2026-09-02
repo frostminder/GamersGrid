@@ -11,6 +11,7 @@ export const HomeScreen: React.FC = () => {
   const [logoError, setLogoError] = React.useState(false);
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [activeTab, setActiveTab] = useState('home');
+  const [dismissInstall, setDismissInstall] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -57,7 +58,7 @@ export const HomeScreen: React.FC = () => {
         </div>
       </header>
 
-      {/* Main Content Area */}
+        {/* Main Content Area */}
       <main className="flex-1 w-full max-w-4xl px-4 py-6 flex flex-col gap-6">
         
         {/* Quick Stats / Welcome */}
@@ -71,38 +72,6 @@ export const HomeScreen: React.FC = () => {
             <span className="text-[#eeeeee]">ONLINE</span>
           </div>
         </div>
-
-        {/* PWA Install Banner */}
-        {(!isInstalled && isInstallable) && (
-          <div className="w-full bg-gradient-to-r from-[#5003BD]/20 to-[#7A22EC]/20 border border-[#7A22EC]/30 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-[0_0_30px_rgba(122,34,236,0.1)]">
-            <div>
-              <h3 className="font-bold text-white mb-1">Install Gamers Grid</h3>
-              <p className="text-sm text-[#aaaaaa]">Get the full experience by installing our app on your home screen.</p>
-            </div>
-            <button
-              onClick={install}
-              className="whitespace-nowrap px-5 py-2.5 bg-[#7A22EC] hover:bg-[#6818dd] text-white font-bold rounded-xl transition-colors shadow-lg shadow-[#7A22EC]/20"
-            >
-              Install App
-            </button>
-          </div>
-        )}
-
-        {/* iOS Install Prompt */}
-        {(!isInstalled && isIOS) && (
-          <div className="w-full bg-gradient-to-r from-[#5003BD]/20 to-[#7A22EC]/20 border border-[#7A22EC]/30 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-[0_0_30px_rgba(122,34,236,0.1)]">
-            <div>
-              <h3 className="font-bold text-white mb-1">Install on iOS</h3>
-              <p className="text-sm text-[#aaaaaa]">Add Gamers Grid to your home screen for quick access.</p>
-            </div>
-            <button
-              onClick={() => setShowIOSGuide(true)}
-              className="whitespace-nowrap px-5 py-2.5 bg-[#7A22EC] hover:bg-[#6818dd] text-white font-bold rounded-xl transition-colors shadow-lg shadow-[#7A22EC]/20"
-            >
-              How to Install
-            </button>
-          </div>
-        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-[#1a1a1a] border border-[#2a2a2e] rounded-2xl p-6 flex flex-col items-start justify-center min-h-[180px] hover:border-[#5003BD] hover:bg-[#1c1c20] transition-all cursor-pointer group shadow-lg">
@@ -122,6 +91,68 @@ export const HomeScreen: React.FC = () => {
           </div>
         </div>
       </main>
+
+      {/* PWA Install Modal (Android/Desktop) */}
+      {(!isInstalled && isInstallable && !dismissInstall) && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-3xl bg-[#1c1c1f] border border-[#7A22EC]/30 p-8 shadow-[0_0_50px_rgba(122,34,236,0.15)] animate-in zoom-in-95 duration-300 flex flex-col items-center text-center relative">
+            <button 
+              onClick={() => setDismissInstall(true)}
+              className="absolute top-4 right-4 text-[#888888] hover:text-white transition-colors"
+            >
+              ✕
+            </button>
+            <div className="w-16 h-16 bg-gradient-to-tr from-[#5003BD] to-[#7A22EC] rounded-2xl p-1 shadow-lg mb-6">
+              <div className="w-full h-full bg-[#121212] rounded-xl flex items-center justify-center">
+                <GamersGridLogo size={32} color="#7A22EC" glow={true} />
+              </div>
+            </div>
+            <h3 className="text-2xl font-bold text-white mb-2">Install Gamers Grid</h3>
+            <p className="text-[#aaaaaa] mb-8 leading-relaxed">
+              Add Gamers Grid to your home screen for the full, immersive app experience. No browser bars, faster loading.
+            </p>
+            <div className="w-full flex flex-col gap-3">
+              <button
+                onClick={install}
+                className="w-full rounded-xl bg-[#7A22EC] hover:bg-[#6818dd] py-4 text-sm font-bold text-white transition-colors shadow-[0_0_15px_rgba(122,34,236,0.4)]"
+              >
+                INSTALL APP
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* iOS Install Prompt Overlay */}
+      {(!isInstalled && isIOS && !showIOSGuide && !dismissInstall) && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-3xl bg-[#1c1c1f] border border-[#7A22EC]/30 p-8 shadow-[0_0_50px_rgba(122,34,236,0.15)] animate-in zoom-in-95 duration-300 flex flex-col items-center text-center relative">
+            <button 
+              onClick={() => setDismissInstall(true)}
+              className="absolute top-4 right-4 text-[#888888] hover:text-white transition-colors"
+            >
+              ✕
+            </button>
+            <div className="w-16 h-16 bg-gradient-to-tr from-[#5003BD] to-[#7A22EC] rounded-2xl p-1 shadow-lg mb-6">
+              <div className="w-full h-full bg-[#121212] rounded-xl flex items-center justify-center">
+                <GamersGridLogo size={32} color="#7A22EC" glow={true} />
+              </div>
+            </div>
+            <h3 className="text-2xl font-bold text-white mb-2">Install Gamers Grid</h3>
+            <p className="text-[#aaaaaa] mb-8 leading-relaxed">
+              Add Gamers Grid to your iOS home screen for the full native app experience.
+            </p>
+            <div className="w-full flex flex-col gap-3">
+              <button
+                onClick={() => setShowIOSGuide(true)}
+                className="w-full rounded-xl bg-[#7A22EC] hover:bg-[#6818dd] py-4 text-sm font-bold text-white transition-colors shadow-[0_0_15px_rgba(122,34,236,0.4)]"
+              >
+                HOW TO INSTALL
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Bottom Navigation Bar */}
       <nav className="fixed bottom-0 w-full max-w-md bg-[#1a1a1a]/90 backdrop-blur-xl border-t border-[#2a2a2e] pb-4 sm:pb-0 z-50 rounded-t-2xl sm:rounded-none sm:max-w-none">

@@ -82,7 +82,7 @@ export const AuthScreen: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen w-full bg-[#121212] text-white flex flex-col items-center justify-center p-4 relative overflow-hidden">
+    <div className="h-[100dvh] w-full bg-[#121212] text-white flex flex-col items-center justify-center p-4 relative overflow-hidden">
       {/* Background Ambience */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-[#5003BD] opacity-[0.03] rounded-full blur-[140px]" />
@@ -206,21 +206,7 @@ export const AuthScreen: React.FC = () => {
                 </div>
 
                 <div className="space-y-1.5">
-                  <div className="flex justify-between items-end">
-                    <label className="text-xs font-mono text-[#aaaaaa] ml-1">PASSWORD</label>
-                    {isLogin && (
-                      <button 
-                        type="button"
-                        onClick={() => {
-                          setIsForgotPassword(true);
-                          setError(null);
-                        }}
-                        className="text-xs text-[#7A22EC] hover:text-[#9b51f0] transition-colors mr-1 font-bold"
-                      >
-                        FORGOT PASSWORD?
-                      </button>
-                    )}
-                  </div>
+                  <label className="text-xs font-mono text-[#aaaaaa] ml-1">PASSWORD</label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                       <Lock className="h-4 w-4 text-[#555555]" />
@@ -235,6 +221,21 @@ export const AuthScreen: React.FC = () => {
                     />
                   </div>
                 </div>
+
+                {isLogin && (
+                  <div className="flex justify-end pt-1">
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setIsForgotPassword(true);
+                        setError(null);
+                      }}
+                      className="text-xs font-mono text-[#7A22EC] hover:text-[#9b51f0] transition-colors font-bold mr-1"
+                    >
+                      FORGOT PASSWORD?
+                    </button>
+                  </div>
+                )}
 
                 <button
                   type="submit"
