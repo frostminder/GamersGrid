@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Wifi, Users, LayoutDashboard, Settings, Bell, Home, Trophy, PlaySquare, User } from 'lucide-react';
+import { ShieldCheck, Wifi, Users, LayoutDashboard, Settings, Bell, Home, Trophy, PlaySquare, User, Search, Plus, MessageSquare } from 'lucide-react';
 import { GamersGridLogo } from '../components/GamersGridLogo';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { auth } from '../lib/firebase';
@@ -7,6 +7,7 @@ import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import { ProfileTab } from '../components/ProfileTab';
 import { TournamentHub } from '../components/TournamentHub';
+import { SearchMockup, CreateMockup, MessagesMockup, SettingsMockup } from '../components/MockupScreens';
 
 export const HomeScreen: React.FC = () => {
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
@@ -54,7 +55,10 @@ export const HomeScreen: React.FC = () => {
             </button>
             
             {/* User Avatar */}
-            <div className="h-9 w-9 rounded-full bg-gradient-to-tr bg-[#5003BD] p-[2px] cursor-pointer hover:scale-105 transition-transform">
+            <div 
+              onClick={() => setActiveTab('profile')}
+              className="h-9 w-9 rounded-full bg-gradient-to-tr bg-[#5003BD] p-[2px] cursor-pointer hover:scale-105 transition-transform"
+            >
               <div className="w-full h-full rounded-full bg-[#1a1a1a] flex items-center justify-center overflow-hidden">
                 {user?.photoURL ? (
                   <img src={user.photoURL} alt="Profile" className="w-full h-full object-cover" />
@@ -108,8 +112,29 @@ export const HomeScreen: React.FC = () => {
           <TournamentHub />
         )}
 
+        {activeTab === 'search' && (
+          <SearchMockup />
+        )}
+
+        {activeTab === 'create' && (
+          <CreateMockup />
+        )}
+
+        {activeTab === 'messages' && (
+          <MessagesMockup />
+        )}
+
         {activeTab === 'profile' && (
-          <ProfileTab />
+          <ProfileTab onNavigate={(tab) => setActiveTab(tab)} />
+        )}
+
+        {activeTab === 'settings' && (
+          <SettingsMockup 
+            onSignOut={async () => {
+              await auth.signOut();
+              navigate('/auth');
+            }} 
+          />
         )}
 
       </main>
@@ -177,34 +202,32 @@ export const HomeScreen: React.FC = () => {
       )}
 
       {/* Bottom Navigation Bar */}
-      <nav className="fixed bottom-0 w-full max-w-md bg-[#1a1a1a]/90 backdrop-blur-xl border-t border-[#2a2a2e] pb-4 sm:pb-0 z-50 rounded-t-2xl sm:rounded-none sm:max-w-none">
-        <div className="flex items-center justify-around px-2 py-3 sm:max-w-md sm:mx-auto">
-          {[
-            { id: 'home', icon: Home, label: 'Home' },
-            { id: 'tournaments', icon: Trophy, label: 'Tournaments' },
-            { id: 'feed', icon: PlaySquare, label: 'Feed' },
-            { id: 'profile', icon: User, label: 'Profile' }
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex flex-col items-center justify-center gap-1 w-16 transition-colors ${
-                  isActive ? 'text-[#5003BD]' : 'text-[#777777] hover:text-[#aaaaaa]'
-                }`}
-              >
-                <div className={`p-1.5 rounded-xl transition-all duration-300 ${isActive ? 'bg-[#5003BD]/10' : ''}`}>
-                  <Icon className="w-6 h-6" strokeWidth={isActive ? 2.5 : 2} />
-                </div>
-                <span className={`text-[10px] font-bold ${isActive ? 'text-white' : ''}`}>
-                  {tab.label}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+      <nav className="fixed bottom-0 w-full bg-[#888888]/10 backdrop-blur-2xl rounded-t-3xl border-t border-white/10 shadow-2xl flex items-center justify-evenly px-2 h-16 z-50">
+        {[
+          { id: 'home', icon: Home },
+          { id: 'search', icon: Search },
+          { id: 'create', icon: Plus },
+          { id: 'messages', icon: MessageSquare },
+          { id: 'tournaments', icon: Trophy }
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className="relative flex items-center justify-center w-12 h-12 rounded-full transition-all duration-300"
+            >
+              {isActive && (
+                <div className="absolute inset-0 bg-[#5003BD] rounded-full shadow-[0_0_15px_rgba(80,3,189,0.5)]"></div>
+              )}
+              <Icon 
+                className={`relative z-10 w-6 h-6 transition-colors ${isActive ? 'text-white' : 'text-[#aaaaaa] hover:text-white'}`} 
+                strokeWidth={isActive ? 2.5 : 2} 
+              />
+            </button>
+          );
+        })}
       </nav>
 
       {/* iOS Guide Modal */}

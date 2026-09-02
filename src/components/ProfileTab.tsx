@@ -5,7 +5,11 @@ import { LogOut, Settings, Camera, Crown, Plus, Image as ImageIcon, Eye, Play } 
 import { signOut } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 
-export const ProfileTab: React.FC = () => {
+interface ProfileTabProps {
+  onNavigate?: (tab: string) => void;
+}
+
+export const ProfileTab: React.FC<ProfileTabProps> = ({ onNavigate }) => {
   const navigate = useNavigate();
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -109,16 +113,13 @@ export const ProfileTab: React.FC = () => {
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-[#1c1c1f] to-transparent opacity-80" />
         
-        {/* Settings & Sign Out */}
+        {/* Settings */}
         <div className="absolute top-4 right-4 flex items-center gap-3">
-          <button className="p-2.5 bg-black/40 hover:bg-black/60 backdrop-blur-md rounded-full transition-colors text-white border border-white/10 shadow-lg">
-            <Settings className="w-5 h-5" />
-          </button>
           <button 
-            onClick={handleSignOut}
-            className="p-2.5 bg-red-500/20 hover:bg-red-500/40 backdrop-blur-md rounded-full transition-colors text-red-400 border border-red-500/20 shadow-lg"
+            onClick={() => onNavigate && onNavigate('settings')}
+            className="p-2.5 bg-black/40 hover:bg-black/60 backdrop-blur-md rounded-full transition-colors text-white border border-white/10 shadow-lg"
           >
-            <LogOut className="w-5 h-5" />
+            <Settings className="w-5 h-5" />
           </button>
         </div>
 
@@ -171,13 +172,26 @@ export const ProfileTab: React.FC = () => {
         <div className="flex items-center gap-3 mt-4">
           <Crown className="w-6 h-6 text-[#f59e0b]" />
           <h1 className="text-3xl font-black tracking-wide text-white">{profile.gamertag}</h1>
-          <button className="p-1 bg-[#2a2a2e] hover:bg-[#383842] rounded-lg transition-colors text-white ml-1">
-            <Plus className="w-5 h-5" />
-          </button>
         </div>
         <p className="text-[#888888] font-mono mt-1 text-[15px]">
           @{profile.gamertagLower}
         </p>
+
+        {/* Bio & Country */}
+        {(profile.bio || profile.country) && (
+          <div className="mt-4 text-center max-w-md px-4">
+            {profile.bio && (
+              <p className="text-[#eeeeee] text-sm mb-2 leading-relaxed">
+                {profile.bio}
+              </p>
+            )}
+            {profile.country && (
+              <p className="text-[#777777] font-mono text-xs uppercase tracking-widest">
+                📍 {profile.country}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Stats Row */}
         <div className="flex w-full max-w-md justify-between mt-8 mb-2 px-2">
@@ -199,7 +213,7 @@ export const ProfileTab: React.FC = () => {
 
         {/* Tabs */}
         <div className="w-full border-b border-[#2a2a2e] mt-6 flex">
-          {['Games', 'Posts', 'Streams'].map((tab) => (
+          {['Games', 'Posts', 'Achievements'].map((tab) => (
             <button 
               key={tab}
               onClick={() => setActiveTab(tab)}

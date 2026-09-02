@@ -28,6 +28,8 @@ export const OnboardingScreen: React.FC = () => {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [gamertag, setGamertag] = useState('');
+  const [bio, setBio] = useState('');
+  const [country, setCountry] = useState('');
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [selectedGames, setSelectedGames] = useState<string[]>([]);
   const [logoError, setLogoError] = useState(false);
@@ -96,6 +98,8 @@ export const OnboardingScreen: React.FC = () => {
         await setDoc(doc(db, 'users', user.uid), {
           gamertag: gamertag,
           gamertagLower: gamertag.toLowerCase(),
+          bio: bio,
+          country: country,
           platforms: selectedPlatforms,
           games: selectedGames,
           createdAt: new Date().toISOString(),
@@ -175,9 +179,32 @@ export const OnboardingScreen: React.FC = () => {
                 />
                 <div className="absolute right-2 top-8">
                   {tagStatus === 'checking' && <Loader2 className="w-6 h-6 text-[#5003BD] animate-spin" />}
-                  {tagStatus === 'available' && <CheckCircle2 className="w-6 h-6 text-green-500" />}
-                  {tagStatus === 'taken' && <XCircle className="w-6 h-6 text-red-500" />}
+                  {tagStatus === 'available' && gamertag.trim().length >= 3 && <CheckCircle2 className="w-6 h-6 text-green-500" />}
+                  {tagStatus === 'taken' && gamertag.trim().length >= 3 && <XCircle className="w-6 h-6 text-red-500" />}
                 </div>
+              </div>
+
+              <div className="pt-4">
+                <p className="text-sm font-bold text-[#888888] mb-2 uppercase tracking-wider">Bio (Optional)</p>
+                <textarea
+                  value={bio}
+                  onChange={(e) => setBio(e.target.value)}
+                  placeholder="Tell us about yourself..."
+                  className="w-full bg-[#1a1a1a] border border-[#2a2a2e] focus:border-[#5003BD] rounded-xl p-4 text-white outline-none resize-none h-24 transition-colors"
+                />
+              </div>
+
+              <div className="pt-2">
+                <p className="text-sm font-bold text-[#888888] mb-2 uppercase tracking-wider">Country (Optional)</p>
+                <input
+                  type="text"
+                  value={country}
+                  onChange={(e) => setCountry(e.target.value)}
+                  placeholder="e.g. USA, UK, Japan"
+                  className="w-full bg-[#1a1a1a] border border-[#2a2a2e] focus:border-[#5003BD] rounded-xl p-4 text-white outline-none transition-colors"
+                />
+              </div>
+              <div>
                 <p className={`text-xs font-mono mt-3 ${tagStatus === 'taken' ? 'text-red-400' : 'text-[#555555]'}`}>
                   {tagStatus === 'taken' ? 'GAMERTAG ALREADY IN USE' : 'MINIMUM 3 CHARACTERS'}
                 </p>

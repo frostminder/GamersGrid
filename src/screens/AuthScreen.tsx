@@ -8,7 +8,7 @@ import { Mail, Lock, ArrowRight, Chrome, ArrowLeft } from 'lucide-react';
 
 export const AuthScreen: React.FC = () => {
   const navigate = useNavigate();
-  const [isLogin, setIsLogin] = useState(false);
+  const [isLogin, setIsLogin] = useState(true);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [email, setEmail] = useState('');
