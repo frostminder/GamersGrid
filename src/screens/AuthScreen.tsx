@@ -4,7 +4,7 @@ import { GamersGridLogo } from '../components/GamersGridLogo';
 import { auth, googleProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, db } from '../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
-import { Mail, Lock, ArrowRight, Chrome, ArrowLeft } from 'lucide-react';
+import { Mail, Lock, ArrowRight, Chrome, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 
 export const AuthScreen: React.FC = () => {
   const navigate = useNavigate();
@@ -14,6 +14,7 @@ export const AuthScreen: React.FC = () => {
   const [resetSent, setResetSent] = useState(false);
   const [email, setEmail] = useState((location.state as any)?.prefillEmail || '');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [logoError, setLogoError] = useState(false);
@@ -241,13 +242,20 @@ export const AuthScreen: React.FC = () => {
                       <Lock className="h-4 w-4 text-[#555555]" />
                     </div>
                     <input
-                      type="password"
+                      type={showPassword ? "text" : "password"}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full bg-[#121212] border border-[#2a2a2e] rounded-xl py-3 pl-10 pr-4 text-white placeholder-[#555555] focus:outline-none focus:border-[#5003BD] transition-colors"
+                      className="w-full bg-[#121212] border border-[#2a2a2e] rounded-xl py-3 pl-10 pr-12 text-white placeholder-[#555555] focus:outline-none focus:border-[#5003BD] transition-colors"
                       placeholder="••••••••"
                       required
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-[#555555] hover:text-[#aaaaaa] transition-colors"
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
                   </div>
                 </div>
 
