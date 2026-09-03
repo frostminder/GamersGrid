@@ -22,6 +22,33 @@
   <body class="bg-[#121212] text-white antialiased selection:bg-[#5003BD] selection:text-white overflow-x-hidden">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // Strict anti-zoom for iOS and Android
+      document.addEventListener('gesturestart', function(e) {
+        e.preventDefault();
+      });
+      document.addEventListener('touchmove', function(e) {
+        // Prevent zoom on iOS (scale) and Android (touches > 1)
+        if (e.scale !== 1 || e.touches.length > 1) {
+          e.preventDefault();
+        }
+      }, { passive: false });
+      
+      document.addEventListener('touchstart', function(e) {
+        if (e.touches.length > 1) {
+          e.preventDefault();
+        }
+      }, { passive: false });
+      
+      let lastTouchEnd = 0;
+      document.addEventListener('touchend', function(e) {
+        const now = (new Date()).getTime();
+        if (now - lastTouchEnd <= 300) {
+          e.preventDefault();
+        }
+        lastTouchEnd = now;
+      }, { passive: false });
+    </script>
   </body>
 </html>
 

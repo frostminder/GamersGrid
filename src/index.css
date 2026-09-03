@@ -26,8 +26,13 @@
   
   * {
     /* Hide scrollbar for IE, Edge and Firefox */
-    -ms-overflow-style: none;
-    scrollbar-width: none;
+    -ms-overflow-style: none !important;
+    scrollbar-width: none !important;
+  }
+
+  /* Prevent iOS zoom on input focus by forcing 16px minimum */
+  input, select, textarea {
+    font-size: 16px !important;
   }
 
   h1, h2, h3, .font-gaming {
@@ -40,10 +45,11 @@
 }
 
 /* Hide webkit scrollbars globally */
-::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
+*::-webkit-scrollbar, ::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
 }
 
 /* Glassmorphic navigation styles */
