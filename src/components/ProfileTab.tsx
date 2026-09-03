@@ -185,15 +185,16 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onNavigate }) => {
         {/* Bio & Country */}
         {(profile.bio || profile.country) && (
           <div className="mt-4 text-center max-w-md px-4">
-            {profile.bio && (
-              <p className="text-[#eeeeee] text-sm mb-2 leading-relaxed">
-                {profile.bio}
-              </p>
+            <p className="text-[#eeeeee] text-sm leading-relaxed inline">
+              {profile.bio}
+            </p>
+            {profile.bio && profile.country && (
+              <span className="mx-2 text-[#444444]">|</span>
             )}
             {profile.country && (
-              <p className="text-[#777777] font-mono text-xs uppercase tracking-widest">
+              <span className="text-[#777777] font-mono text-xs uppercase tracking-widest inline-flex items-center gap-1">
                 📍 {profile.country}
-              </p>
+              </span>
             )}
           </div>
         )}

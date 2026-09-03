@@ -33,7 +33,17 @@ export const MessagesMockup = () => (
   </div>
 );
 
-export const SettingsMockup = ({ onSignOut }: { onSignOut: () => void }) => {
+export const SettingsMockup = ({ onSignOut, onAddAccount, onSwitchAccount }: { onSignOut: () => void, onAddAccount: () => void, onSwitchAccount: (email: string) => void }) => {
+  const savedAccounts = React.useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem('gamersgrid_accounts') || '[]');
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const currentEmail = auth.currentUser?.email;
+
   return (
     <div className="w-full flex flex-col gap-6 animate-in fade-in duration-300 pb-20 pt-6 px-4">
       <div className="flex items-center justify-between mb-2">
@@ -43,35 +53,58 @@ export const SettingsMockup = ({ onSignOut }: { onSignOut: () => void }) => {
       <div className="bg-[#1a1a1a] border border-[#2a2a2e] rounded-2xl p-4 flex flex-col gap-2">
         <h3 className="text-sm font-bold tracking-wider text-[#888888] mb-2 px-2">ACCOUNTS</h3>
         
-        {/* Current Account */}
-        <div className="flex items-center justify-between p-3 bg-[#121212] rounded-xl border border-[#5003BD]/50 cursor-pointer">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-[#5003BD] flex items-center justify-center text-white font-bold">
-              {auth.currentUser?.email?.[0].toUpperCase() || 'A'}
+        {savedAccounts.length > 0 ? savedAccounts.map((account: any, idx: number) => {
+          const isCurrent = account.email === currentEmail;
+          return (
+            <div 
+              key={idx} 
+              onClick={() => !isCurrent && onSwitchAccount(account.email)}
+              className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-colors ${
+                isCurrent ? 'bg-[#121212] border-[#5003BD]/50' : 'bg-[#121212] border-[#2a2a2e] hover:bg-[#1c1c20]'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-[#2a2a2e] flex items-center justify-center overflow-hidden shrink-0">
+                  {account.photoURL ? (
+                    <img src={account.photoURL} alt="Profile" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="font-bold text-white uppercase">{account.gamertag?.[0] || account.email?.[0] || 'A'}</span>
+                  )}
+                </div>
+                <div>
+                  <div className="text-sm font-bold text-white">
+                    {account.gamertag || 'Player'}
+                    {isCurrent && <span className="ml-2 text-[10px] text-[#5003BD] bg-[#5003BD]/20 px-2 py-0.5 rounded-full">CURRENT</span>}
+                  </div>
+                  <div className="text-xs text-[#777777]">{account.email}</div>
+                </div>
+              </div>
+              {isCurrent ? (
+                <div className="w-2 h-2 rounded-full bg-green-500 mr-2"></div>
+              ) : (
+                <ChevronRight className="w-4 h-4 text-[#555555]" />
+              )}
             </div>
-            <div>
-              <div className="text-sm font-bold text-white">Current Account</div>
-              <div className="text-xs text-[#777777]">{auth.currentUser?.email || 'user@example.com'}</div>
+          );
+        }) : (
+          <div className="flex items-center justify-between p-3 bg-[#121212] rounded-xl border border-[#5003BD]/50 cursor-pointer">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-[#5003BD] flex items-center justify-center text-white font-bold">
+                {auth.currentUser?.email?.[0].toUpperCase() || 'A'}
+              </div>
+              <div>
+                <div className="text-sm font-bold text-white">Current Account</div>
+                <div className="text-xs text-[#777777]">{auth.currentUser?.email || 'user@example.com'}</div>
+              </div>
             </div>
+            <div className="w-2 h-2 rounded-full bg-green-500 mr-2"></div>
           </div>
-          <div className="w-2 h-2 rounded-full bg-green-500 mr-2"></div>
-        </div>
+        )}
 
-        {/* Alternate Account Mock */}
-        <div className="flex items-center justify-between p-3 bg-[#121212] rounded-xl border border-[#2a2a2e] cursor-pointer hover:bg-[#1c1c20] transition-colors">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-[#2a2a2e] flex items-center justify-center text-white font-bold">
-              B
-            </div>
-            <div>
-              <div className="text-sm font-bold text-white">Alt Account</div>
-              <div className="text-xs text-[#777777]">smurf@example.com</div>
-            </div>
-          </div>
-          <ChevronRight className="w-4 h-4 text-[#555555]" />
-        </div>
-
-        <button className="flex items-center justify-center gap-2 p-3 mt-2 bg-[#2a2a2e] hover:bg-[#383842] rounded-xl text-sm font-bold text-white transition-colors">
+        <button 
+          onClick={onAddAccount}
+          className="flex items-center justify-center gap-2 p-3 mt-2 bg-[#2a2a2e] hover:bg-[#383842] rounded-xl text-sm font-bold text-white transition-colors"
+        >
           <Plus className="w-4 h-4" />
           ADD ANOTHER ACCOUNT
         </button>

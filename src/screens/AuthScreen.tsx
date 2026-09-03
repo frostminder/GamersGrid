@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { GamersGridLogo } from '../components/GamersGridLogo';
 import { auth, googleProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, db } from '../lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -8,10 +8,11 @@ import { Mail, Lock, ArrowRight, Chrome, ArrowLeft } from 'lucide-react';
 
 export const AuthScreen: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [isLogin, setIsLogin] = useState(true);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [resetSent, setResetSent] = useState(false);
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState((location.state as any)?.prefillEmail || '');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

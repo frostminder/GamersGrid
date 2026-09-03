@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { ShieldCheck, Wifi, Users, LayoutDashboard, Settings, Bell, Home, Trophy, PlaySquare, User, Search, Plus, MessageSquare } from 'lucide-react';
 import { GamersGridLogo } from '../components/GamersGridLogo';
 import { usePWAInstall } from '../hooks/usePWAInstall';
-import { auth } from '../lib/firebase';
+import { auth, db } from '../lib/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { ProfileTab } from '../components/ProfileTab';
 import { TournamentHub } from '../components/TournamentHub';
@@ -15,18 +16,53 @@ export const HomeScreen: React.FC = () => {
   const [showIOSGuide, setShowIOSGuide] = React.useState(false);
   const [logoError, setLogoError] = React.useState(false);
   const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [userProfile, setUserProfile] = useState<any>(null);
   const [activeTab, setActiveTab] = useState('home');
   const [dismissInstall, setDismissInstall] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
+    let unsubscribeSnapshot: () => void;
+    
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (!currentUser) {
         navigate("/auth");
+        setUserProfile(null);
+      } else {
+        unsubscribeSnapshot = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            setUserProfile(data);
+            
+            // Save to localStorage for quick switching
+            try {
+              const saved = JSON.parse(localStorage.getItem('gamersgrid_accounts') || '[]');
+              const existingIndex = saved.findIndex((acc: any) => acc.email === currentUser.email);
+              const accountData = {
+                email: currentUser.email,
+                gamertag: data.gamertag,
+                photoURL: data.photoURL || currentUser.photoURL
+              };
+              
+              if (existingIndex >= 0) {
+                saved[existingIndex] = accountData;
+              } else {
+                saved.push(accountData);
+              }
+              localStorage.setItem('gamersgrid_accounts', JSON.stringify(saved));
+            } catch (e) {
+              console.error('Error saving account to local storage:', e);
+            }
+          }
+        });
       }
       setUser(currentUser);
     });
-    return () => unsubscribe();
+
+    return () => {
+      unsubscribe();
+      if (unsubscribeSnapshot) unsubscribeSnapshot();
+    };
   }, []);
 
   return (
@@ -61,10 +97,10 @@ export const HomeScreen: React.FC = () => {
               className="h-9 w-9 rounded-full bg-gradient-to-tr bg-[#5003BD] p-[2px] cursor-pointer hover:scale-105 transition-transform"
             >
               <div className="w-full h-full rounded-full bg-[#1a1a1a] flex items-center justify-center overflow-hidden">
-                {user?.photoURL ? (
-                  <img src={user.photoURL} alt="Profile" className="w-full h-full object-cover" />
+                {(userProfile?.photoURL || user?.photoURL) ? (
+                  <img src={userProfile?.photoURL || user?.photoURL} alt="Profile" className="w-full h-full object-cover" />
                 ) : (
-                  <span className="font-bold text-sm text-white">{user?.email?.[0].toUpperCase() || 'G'}</span>
+                  <span className="font-bold text-sm text-white uppercase">{userProfile?.gamertag?.[0] || user?.email?.[0] || 'G'}</span>
                 )}
               </div>
             </div>
@@ -140,6 +176,14 @@ export const HomeScreen: React.FC = () => {
               await auth.signOut();
               navigate('/auth');
             }} 
+            onAddAccount={async () => {
+              await auth.signOut();
+              navigate('/auth');
+            }}
+            onSwitchAccount={async (email) => {
+              await auth.signOut();
+              navigate('/auth', { state: { prefillEmail: email } });
+            }}
           />
         )}
 

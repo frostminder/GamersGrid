@@ -196,13 +196,31 @@ export const OnboardingScreen: React.FC = () => {
 
               <div className="pt-2">
                 <p className="text-sm font-bold text-[#888888] mb-2 uppercase tracking-wider">Country (Optional)</p>
-                <input
-                  type="text"
-                  value={country}
-                  onChange={(e) => setCountry(e.target.value)}
-                  placeholder="e.g. USA, UK, Japan"
-                  className="w-full bg-[#1a1a1a] border border-[#2a2a2e] focus:border-[#5003BD] rounded-xl p-4 text-white outline-none transition-colors"
-                />
+                <div className="relative">
+                  <select
+                    value={country}
+                    onChange={(e) => setCountry(e.target.value)}
+                    className="w-full bg-[#1a1a1a] border border-[#2a2a2e] focus:border-[#5003BD] rounded-xl p-4 text-white outline-none transition-colors appearance-none cursor-pointer"
+                  >
+                    <option value="" className="text-[#888888]">Select your country...</option>
+                    <option value="United States">United States</option>
+                    <option value="United Kingdom">United Kingdom</option>
+                    <option value="Canada">Canada</option>
+                    <option value="Australia">Australia</option>
+                    <option value="Germany">Germany</option>
+                    <option value="France">France</option>
+                    <option value="Japan">Japan</option>
+                    <option value="South Korea">South Korea</option>
+                    <option value="Brazil">Brazil</option>
+                    <option value="Mexico">Mexico</option>
+                    <option value="Spain">Spain</option>
+                    <option value="Italy">Italy</option>
+                    <option value="Other">Other</option>
+                  </select>
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <ChevronRight className="w-5 h-5 text-[#888888] rotate-90" />
+                  </div>
+                </div>
               </div>
               <div>
                 <p className={`text-xs font-mono mt-3 ${tagStatus === 'taken' ? 'text-red-400' : 'text-[#555555]'}`}>
