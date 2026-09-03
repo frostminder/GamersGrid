@@ -29,7 +29,7 @@
       });
       document.addEventListener('touchmove', function(e) {
         // Prevent zoom on iOS (scale) and Android (touches > 1)
-        if (e.scale !== 1 || e.touches.length > 1) {
+        if ((e.scale !== undefined && e.scale !== 1) || e.touches.length > 1) {
           e.preventDefault();
         }
       }, { passive: false });
