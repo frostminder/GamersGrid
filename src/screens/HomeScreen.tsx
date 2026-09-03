@@ -114,7 +114,7 @@ export const HomeScreen: React.FC = () => {
       )}
 
       {/* Main Content Area */}
-      <main className={`flex-1 w-full flex flex-col ${activeTab === 'profile' ? 'p-0 gap-0 max-w-none' : 'max-w-4xl px-4 py-6 gap-6'}`}>
+      <main className={`flex-1 w-full flex flex-col ${activeTab === 'profile' ? 'p-0 gap-0 max-w-none' : 'max-w-4xl px-4 pt-3 pb-6 gap-4'}`}>
         
         {activeTab === 'home' && (
           <>

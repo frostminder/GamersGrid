@@ -72,9 +72,9 @@ export const NotificationsScreen = () => {
   };
 
   return (
-    <div className="flex-1 w-full flex flex-col h-full bg-[#121212] pt-4 px-4 pb-20 animate-in fade-in">
-      <div className="sticky top-0 z-10 bg-[#121212] pb-4">
-        <h1 className="text-2xl font-bold text-white mb-2">Notifications</h1>
+    <div className="flex-1 w-full flex flex-col h-full bg-[#121212] pt-0 px-0 pb-16 animate-in fade-in">
+      <div className="sticky top-0 z-10 bg-[#121212] pb-2 pt-0">
+        <h1 className="text-xl font-bold text-white mb-2">Notifications</h1>
       </div>
 
       <div className="flex-1 overflow-y-auto hide-scrollbar">

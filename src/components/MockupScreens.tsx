@@ -45,9 +45,9 @@ export const SettingsMockup = ({ onSignOut, onAddAccount, onSwitchAccount }: { o
   const currentEmail = auth.currentUser?.email;
 
   return (
-    <div className="w-full flex flex-col gap-6 animate-in fade-in duration-300 pb-20 pt-6 px-4">
-      <div className="flex items-center justify-between mb-2">
-        <h1 className="text-2xl font-bold text-white">Settings</h1>
+    <div className="w-full flex flex-col gap-4 animate-in fade-in duration-300 pb-20 pt-0 px-0">
+      <div className="flex items-center justify-between mb-1">
+        <h1 className="text-xl font-bold text-white">Settings</h1>
       </div>
 
       <div className="bg-[#1a1a1a] border border-[#2a2a2e] rounded-2xl p-4 flex flex-col gap-2">

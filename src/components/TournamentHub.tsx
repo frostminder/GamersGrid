@@ -161,7 +161,7 @@ export const TournamentHub: React.FC<TournamentHubProps> = ({
   };
 
   return (
-    <div className="space-y-5 pb-24">
+    <div className="space-y-4 pb-24 pt-0">
       {/* 1. Header Banner: Esports Tournaments Hub */}
       <div className="relative rounded-2xl overflow-hidden bg-gradient-to-r from-[#5003BD] via-[#350280] to-[#121212] p-5 sm:p-6 border border-[#7A22EC]/40 shadow-xl">
         <div className="relative z-10 max-w-xl space-y-2">

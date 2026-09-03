@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Users, MapPin, Link as LinkIcon, Calendar } from 'lucide-react';
 import { UserProfile, getFollowStats, getFollowers, getFollowing } from '../lib/userService';
 import { UserListModal } from './UserListModal';
+import { getCountryFlag } from '../data/countries';
 
 interface PublicProfileModalProps {
   user: UserProfile;
@@ -44,8 +45,8 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({ user, on
   const activeUser = selectedUser || user;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center bg-black/80 backdrop-blur-sm">
-      <div className="bg-[#1a1a1a] w-full sm:w-[500px] h-[90vh] sm:h-[700px] rounded-t-3xl sm:rounded-3xl border border-[#2a2a2e] flex flex-col animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-0 sm:zoom-in-95 overflow-hidden">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#121212]">
+      <div className="bg-[#121212] w-full h-full flex flex-col animate-in slide-in-from-bottom-8 overflow-hidden">
         {/* Banner */}
         <div className="relative h-32 bg-[#2a2a2e] shrink-0">
           {activeUser.bannerURL && (
@@ -74,8 +75,16 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({ user, on
             </div>
 
             <div className="mt-3">
-              <h1 className="text-2xl font-bold text-white">{activeUser.gamertag || 'Player'}</h1>
-              <p className="text-[#777777] text-sm">{activeUser.email}</p>
+              <h1 className="text-2xl font-bold text-white">{activeUser.name || activeUser.gamertag || 'Player'}</h1>
+              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                <p className="text-[#777777] text-sm">@{activeUser.gamertag || activeUser.email}</p>
+                {activeUser.country && (
+                  <span className="inline-flex items-center gap-1 text-xs text-[#cccccc] bg-[#232323] px-2 py-0.5 rounded-md border border-[#2a2a2e]">
+                    <span>{getCountryFlag(activeUser.country)}</span>
+                    <span>{activeUser.country}</span>
+                  </span>
+                )}
+              </div>
             </div>
 
             {activeUser.bio && (
@@ -84,24 +93,33 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({ user, on
 
             <div className="flex items-center gap-6 mt-5">
               <button 
+                onClick={() => !selectedUser && handleOpenList('followers')}
+                className="flex gap-1.5 items-center cursor-pointer hover:opacity-80"
+              >
+                <span className="font-bold text-white">{!selectedUser ? stats.followers : '-'}</span>
+                <span className="text-[#777777] text-sm">
+                  {stats.followers === 1 ? 'Follower' : 'Followers'}
+                </span>
+              </button>
+              <div className="flex gap-1.5 items-center">
+                <span className="font-bold text-white">0</span>
+                <span className="text-[#777777] text-sm">Likes</span>
+              </div>
+              <button 
                 onClick={() => !selectedUser && handleOpenList('following')}
                 className="flex gap-1.5 items-center cursor-pointer hover:opacity-80"
               >
                 <span className="font-bold text-white">{!selectedUser ? stats.following : '-'}</span>
                 <span className="text-[#777777] text-sm">Following</span>
               </button>
-              <button 
-                onClick={() => !selectedUser && handleOpenList('followers')}
-                className="flex gap-1.5 items-center cursor-pointer hover:opacity-80"
-              >
-                <span className="font-bold text-white">{!selectedUser ? stats.followers : '-'}</span>
-                <span className="text-[#777777] text-sm">Followers</span>
-              </button>
             </div>
-            
+
             {/* Posts Grid Mockup */}
             <div className="mt-8 border-t border-[#2a2a2e] pt-6">
-              <h3 className="text-lg font-bold text-white mb-4">Recent Clips</h3>
+              <div className="flex gap-4 mb-4">
+                <button className="text-white font-bold pb-2 border-b-2 border-[#5003BD]">Posts</button>
+                <button className="text-[#777777] font-bold pb-2 border-b-2 border-transparent">Games</button>
+              </div>
               <div className="grid grid-cols-3 gap-2">
                 {[1, 2, 3, 4, 5, 6].map(i => (
                   <div key={i} className="aspect-square bg-[#232323] rounded-lg"></div>

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { UserProfile, getIsFollowing, followUser, unfollowUser } from '../lib/userService';
 import { auth } from '../lib/firebase';
+import { getCountryFlag } from '../data/countries';
 
 interface UserListModalProps {
   title: string;
@@ -44,8 +45,8 @@ export const UserListModal: React.FC<UserListModalProps> = ({ title, users, onCl
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center bg-black/80 backdrop-blur-sm">
-      <div className="bg-[#1a1a1a] w-full sm:w-[400px] h-[80vh] sm:h-[600px] rounded-t-3xl sm:rounded-3xl border border-[#2a2a2e] flex flex-col animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-0 sm:zoom-in-95">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#121212]">
+      <div className="bg-[#121212] w-full h-full flex flex-col animate-in slide-in-from-bottom-8">
         <div className="flex items-center justify-between p-4 border-b border-[#2a2a2e]">
           <h2 className="text-lg font-bold text-white">{title}</h2>
           <button onClick={onClose} className="p-2 bg-[#2a2a2e] rounded-full text-[#999999] hover:text-white transition-colors">
@@ -76,8 +77,12 @@ export const UserListModal: React.FC<UserListModalProps> = ({ title, users, onCl
                       </div>
                     )}
                   </div>
-                  <div>
-                    <div className="font-bold text-white text-sm">{user.gamertag || 'Player'}</div>
+                  <div className="flex flex-col min-w-0">
+                    <div className="font-bold text-white text-sm truncate flex items-center gap-1.5">
+                      {user.name || user.gamertag || 'Player'}
+                      {user.country && <span className="text-xs">{getCountryFlag(user.country)}</span>}
+                    </div>
+                    <div className="text-xs text-[#777777] truncate">@{user.gamertag || 'player'}</div>
                   </div>
                 </div>
                 

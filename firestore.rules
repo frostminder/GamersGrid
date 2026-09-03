@@ -8,13 +8,23 @@ service cloud.firestore {
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
     
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email == 'samuelsomiahbiz@gmail.com';
+    }
+
     function isValidUser(data) {
       return data.keys().hasAll(['email'])
         && data.email is string && data.email.size() <= 256
+        && (!data.keys().hasAny(['name']) || (data.name is string && data.name.size() <= 100))
         && (!data.keys().hasAny(['gamertag']) || (data.gamertag is string && data.gamertag.size() <= 50))
+        && (!data.keys().hasAny(['gamertagLower']) || (data.gamertagLower is string && data.gamertagLower.size() <= 50))
         && (!data.keys().hasAny(['photoURL']) || (data.photoURL is string && data.photoURL.size() <= 1024))
         && (!data.keys().hasAny(['bannerURL']) || (data.bannerURL is string && data.bannerURL.size() <= 1024))
-        && (!data.keys().hasAny(['bio']) || (data.bio is string && data.bio.size() <= 500));
+        && (!data.keys().hasAny(['bio']) || (data.bio is string && data.bio.size() <= 500))
+        && (!data.keys().hasAny(['country']) || (data.country is string && data.country.size() <= 100))
+        && (!data.keys().hasAny(['platforms']) || (data.platforms is list))
+        && (!data.keys().hasAny(['games']) || (data.games is list))
+        && (!data.keys().hasAny(['createdAt']) || (data.createdAt is string));
     }
 
     match /users/{userId} {
@@ -22,6 +32,7 @@ service cloud.firestore {
       allow list: if isSignedIn(); // Required for search queries
       allow create: if isSignedIn() && request.auth.uid == userId && isValidUser(incoming());
       allow update: if isSignedIn() && request.auth.uid == userId && isValidUser(incoming());
+      allow delete: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
     }
 
     function isValidFollow(data) {
@@ -39,7 +50,7 @@ service cloud.firestore {
       allow create: if isSignedIn() && isValidId(followId) 
         && isValidFollow(incoming())
         && followId == (request.auth.uid + '_' + incoming().followingId);
-      allow delete: if isSignedIn() && isValidId(followId) && existing().followerId == request.auth.uid;
+      allow delete: if isAdmin() || (isSignedIn() && isValidId(followId) && existing().followerId == request.auth.uid);
     }
 
     function isValidNotificationCreate(data) {
@@ -54,14 +65,14 @@ service cloud.firestore {
     }
 
     match /notifications/{notificationId} {
-      allow read: if isSignedIn() && existing().userId == request.auth.uid;
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read: if isSignedIn() && (isAdmin() || existing().userId == request.auth.uid);
+      allow list: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
       allow create: if isSignedIn() && isValidId(notificationId) && isValidNotificationCreate(incoming());
       allow update: if isSignedIn() && isValidId(notificationId) 
         && existing().userId == request.auth.uid 
         && incoming().diff(existing()).affectedKeys().hasOnly(['read'])
         && incoming().read is bool;
-      allow delete: if isSignedIn() && isValidId(notificationId) && existing().userId == request.auth.uid;
+      allow delete: if isAdmin() || (isSignedIn() && isValidId(notificationId) && existing().userId == request.auth.uid);
     }
   }
 }

@@ -3,6 +3,7 @@ import { Search, User, Plus, Check } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
 import { searchUsers, followUser, unfollowUser, getIsFollowing, UserProfile } from '../lib/userService';
 import { PublicProfileModal } from './PublicProfileModal';
+import { getCountryFlag } from '../data/countries';
 
 export const SearchScreen = () => {
   const [query, setQuery] = useState('');
@@ -55,11 +56,11 @@ export const SearchScreen = () => {
   };
 
   return (
-    <div className="flex-1 w-full flex flex-col h-full bg-[#121212] pt-4 px-4 pb-20 animate-in fade-in">
-      <div className="sticky top-0 z-10 bg-[#121212] pb-4">
-        <h1 className="text-2xl font-bold text-white mb-4">Search</h1>
+    <div className="flex-1 w-full flex flex-col h-full bg-[#121212] pt-0 px-0 pb-16 animate-in fade-in overflow-hidden">
+      <div className="sticky top-0 z-10 bg-[#121212] pb-2 pt-0">
+        <h1 className="text-xl font-bold text-white mb-2">Search</h1>
         
-        <div className="relative flex items-center mb-4">
+        <div className="relative flex items-center mb-3">
           <div className="absolute left-3.5 text-[#777777] pointer-events-none">
             <Search className="w-5 h-5" />
           </div>
@@ -67,7 +68,7 @@ export const SearchScreen = () => {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search users..."
+            placeholder={activeTab === 'users' ? 'Search users...' : 'Search posts...'}
             className="w-full bg-[#232323] text-white placeholder-[#777777] rounded-xl pl-11 pr-4 py-3 border-[0.5px] border-[#5003BD]/50 focus:outline-none focus:border-[#7A22EC] transition-all"
           />
         </div>
@@ -88,7 +89,7 @@ export const SearchScreen = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden">
         {loading && (
           <div className="text-center py-10 text-[#777777]">Searching...</div>
         )}
@@ -112,9 +113,12 @@ export const SearchScreen = () => {
                   </div>
                 )}
               </div>
-              <div>
-                <div className="font-bold text-white">{user.gamertag || 'Player'}</div>
-                <div className="text-xs text-[#777777]">{user.email}</div>
+              <div className="flex flex-col min-w-0">
+                <div className="font-bold text-white truncate flex items-center gap-1.5">
+                  {user.name || user.gamertag || 'Player'}
+                  {user.country && <span className="text-sm">{getCountryFlag(user.country)}</span>}
+                </div>
+                <div className="text-xs text-[#777777] truncate">@{user.gamertag || 'player'}</div>
               </div>
             </div>
             

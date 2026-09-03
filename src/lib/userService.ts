@@ -17,9 +17,11 @@ export interface UserProfile {
   uid: string;
   email: string;
   gamertag?: string;
+  name?: string;
   photoURL?: string;
   bannerURL?: string;
   bio?: string;
+  country?: string;
 }
 
 export interface Notification {
@@ -49,6 +51,7 @@ export const searchUsers = async (searchTerm: string): Promise<UserProfile[]> =>
     data.uid = doc.id;
     if (
       data.gamertag?.toLowerCase().includes(term) ||
+      data.name?.toLowerCase().includes(term) ||
       data.email?.toLowerCase().includes(term)
     ) {
       users.push(data);

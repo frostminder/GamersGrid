@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { getFollowStats, getFollowers, getFollowing, UserProfile } from '../lib/userService';
 import { UserListModal } from './UserListModal';
 import { PublicProfileModal } from './PublicProfileModal';
+import { getCountryFlag } from '../data/countries';
 
 interface ProfileTabProps {
   onNavigate?: (tab: string) => void;
@@ -196,13 +197,15 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onNavigate }) => {
         </div>
 
         {/* Name & Handle */}
-        <div className="flex items-center gap-3 mt-4">
-          <Crown className="w-6 h-6 text-[#f59e0b]" />
-          <h1 className="text-3xl font-black tracking-wide text-white">{profile.gamertag}</h1>
+        <div className="flex flex-col items-center mt-4">
+          <div className="flex items-center gap-3">
+            <Crown className="w-6 h-6 text-[#f59e0b]" />
+            <h1 className="text-3xl font-black tracking-wide text-white">{profile.name || profile.gamertag}</h1>
+          </div>
+          <p className="text-[#888888] font-mono mt-1 text-[15px]">
+            @{profile.gamertagLower || profile.gamertag}
+          </p>
         </div>
-        <p className="text-[#888888] font-mono mt-1 text-[15px]">
-          @{profile.gamertagLower}
-        </p>
 
         {/* Bio & Country */}
         {(profile.bio || profile.country) && (
@@ -214,8 +217,9 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onNavigate }) => {
               <span className="mx-2 text-[#444444]">|</span>
             )}
             {profile.country && (
-              <span className="text-[#777777] font-mono text-xs uppercase tracking-widest inline-flex items-center gap-1">
-                📍 {profile.country}
+              <span className="text-[#cccccc] font-medium text-xs tracking-wide inline-flex items-center gap-1.5 bg-[#25252a] px-2.5 py-0.5 rounded-full border border-[#333338]">
+                <span>{getCountryFlag(profile.country)}</span>
+                <span>{profile.country}</span>
               </span>
             )}
           </div>
@@ -227,13 +231,15 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onNavigate }) => {
             onClick={() => handleOpenList('followers')}
             className="flex flex-col items-center flex-1 cursor-pointer hover:opacity-80"
           >
-            <span className="text-[#aaaaaa] text-[13px] font-mono mb-1">Followers</span>
+            <span className="text-[#aaaaaa] text-[13px] font-mono mb-1">
+              {stats.followers === 1 ? 'Follower' : 'Followers'}
+            </span>
             <span className="text-xl font-black text-white">{stats.followers}</span>
           </div>
           <div className="w-px bg-[#2a2a2e] my-1"></div>
           <div className="flex flex-col items-center flex-1">
             <span className="text-[#aaaaaa] text-[13px] font-mono mb-1">Likes</span>
-            <span className="text-xl font-black text-white">44K</span>
+            <span className="text-xl font-black text-white">0</span>
           </div>
           <div className="w-px bg-[#2a2a2e] my-1"></div>
           <div 
@@ -269,7 +275,6 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onNavigate }) => {
           {/* Post 1 */}
           <div className="aspect-square bg-[#2a2a2e] relative group cursor-pointer overflow-hidden">
             <img src="https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80&w=800" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-            <div className="absolute inset-0 bg-black/20 group-hover:bg-black/0 transition-colors"></div>
             <div className="absolute bottom-2 left-2 flex items-center gap-1 text-white text-[10px] font-bold bg-black/50 px-1.5 py-0.5 rounded backdrop-blur">
               <Eye className="w-3 h-3" /> 14K
             </div>
@@ -280,31 +285,10 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onNavigate }) => {
             <div className="absolute top-2 right-2 p-1 bg-black/50 rounded-md backdrop-blur">
               <Play className="w-3 h-3 text-white" />
             </div>
-            <div className="absolute bottom-2 left-2 flex items-center gap-1 text-white text-[10px] font-bold bg-black/50 px-1.5 py-0.5 rounded backdrop-blur">
-              <Eye className="w-3 h-3" /> 24K
-            </div>
           </div>
           {/* Post 3 */}
           <div className="aspect-square bg-[#2a2a2e] relative group cursor-pointer overflow-hidden">
             <img src="https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&q=80&w=800" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-            <div className="absolute bottom-2 left-2 flex items-center gap-1 text-white text-[10px] font-bold bg-black/50 px-1.5 py-0.5 rounded backdrop-blur">
-              <Eye className="w-3 h-3" /> 8K
-            </div>
-          </div>
-          {/* Post 4 */}
-          <div className="aspect-square bg-[#2a2a2e] relative group cursor-pointer overflow-hidden">
-            <img src="https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&q=80&w=800" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-          </div>
-          {/* Post 5 */}
-          <div className="aspect-square bg-[#2a2a2e] relative group cursor-pointer overflow-hidden">
-            <img src="https://images.unsplash.com/photo-1605901309584-818e25960b8f?auto=format&fit=crop&q=80&w=800" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-            <div className="absolute top-2 right-2 p-1 bg-black/50 rounded-md backdrop-blur">
-              <Play className="w-3 h-3 text-white" />
-            </div>
-          </div>
-          {/* Post 6 */}
-          <div className="aspect-square bg-[#2a2a2e] relative group cursor-pointer overflow-hidden">
-            <img src="https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&q=80&w=800" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
           </div>
         </div>
 
