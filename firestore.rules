@@ -15,13 +15,13 @@ service cloud.firestore {
     function isValidUser(data) {
       return data.keys().hasAll(['email'])
         && data.email is string && data.email.size() <= 256
-        && (!data.keys().hasAny(['name']) || (data.name is string && data.name.size() <= 100))
-        && (!data.keys().hasAny(['gamertag']) || (data.gamertag is string && data.gamertag.size() <= 50))
-        && (!data.keys().hasAny(['gamertagLower']) || (data.gamertagLower is string && data.gamertagLower.size() <= 50))
-        && (!data.keys().hasAny(['photoURL']) || (data.photoURL is string && data.photoURL.size() <= 1024))
-        && (!data.keys().hasAny(['bannerURL']) || (data.bannerURL is string && data.bannerURL.size() <= 1024))
-        && (!data.keys().hasAny(['bio']) || (data.bio is string && data.bio.size() <= 500))
-        && (!data.keys().hasAny(['country']) || (data.country is string && data.country.size() <= 100))
+        && (!data.keys().hasAny(['name']) || data.name == null || (data.name is string && data.name.size() <= 100))
+        && (!data.keys().hasAny(['gamertag']) || data.gamertag == null || (data.gamertag is string && data.gamertag.size() <= 50))
+        && (!data.keys().hasAny(['gamertagLower']) || data.gamertagLower == null || (data.gamertagLower is string && data.gamertagLower.size() <= 50))
+        && (!data.keys().hasAny(['photoURL']) || data.photoURL == null || (data.photoURL is string && data.photoURL.size() <= 250000))
+        && (!data.keys().hasAny(['bannerURL']) || data.bannerURL == null || (data.bannerURL is string && data.bannerURL.size() <= 250000))
+        && (!data.keys().hasAny(['bio']) || data.bio == null || (data.bio is string && data.bio.size() <= 500))
+        && (!data.keys().hasAny(['country']) || data.country == null || (data.country is string && data.country.size() <= 100))
         && (!data.keys().hasAny(['platforms']) || (data.platforms is list))
         && (!data.keys().hasAny(['games']) || (data.games is list))
         && (!data.keys().hasAny(['createdAt']) || (data.createdAt is string));

@@ -1,8 +1,26 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GamersGridLogo } from '../components/GamersGridLogo';
-import { Check, ChevronRight, ChevronLeft, ChevronDown, Gamepad2, Monitor, Smartphone, Tv, Loader2, CheckCircle2, XCircle, Search } from 'lucide-react';
+import { 
+  Check, 
+  ChevronRight, 
+  ChevronLeft, 
+  ChevronDown, 
+  Gamepad2, 
+  Monitor, 
+  Smartphone, 
+  Tv, 
+  Loader2, 
+  CheckCircle2, 
+  XCircle, 
+  Search, 
+  Camera, 
+  Upload, 
+  Sparkles, 
+  Trash2 
+} from 'lucide-react';
 import { auth, db } from '../lib/firebase';
+import { updateProfile } from 'firebase/auth';
 import { collection, query, where, getDocs, doc, setDoc } from 'firebase/firestore';
 import { COUNTRIES, getCountryFlag } from '../data/countries';
 
@@ -25,6 +43,21 @@ const GAMES = [
   'Rocket League'
 ];
 
+export const AVATAR_PRESETS = [
+  { id: 'mecha', name: 'Cyber Mecha', url: 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=MechaNeo&backgroundColor=1f1b2e' },
+  { id: 'ninja', name: 'Shadow Ninja', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=ShadowNinja&backgroundColor=121b28' },
+  { id: 'viper', name: 'Neon Viper', url: 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=NeonViper&backgroundColor=2d124d' },
+  { id: 'knight', name: 'Titan Knight', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=TitanKnight&backgroundColor=1b2a26' },
+  { id: 'pixel', name: 'Retro Pixel', url: 'https://api.dicebear.com/7.x/pixel-art/svg?seed=PixelWarrior&backgroundColor=251c35' },
+  { id: 'sorcerer', name: 'Void Mage', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=VoidMage&backgroundColor=2c163b' },
+  { id: 'fox', name: 'Cyber Fox', url: 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=CyberFox&backgroundColor=331e1e' },
+  { id: 'sniper', name: 'Apex Hunter', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=ApexSniper&backgroundColor=152238' },
+  { id: 'reaper', name: 'Phantom', url: 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=PhantomReaper&backgroundColor=222222' },
+  { id: 'samurai', name: 'Ronin', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=RoninBlade&backgroundColor=291b25' },
+  { id: 'pilot', name: 'Star Pilot', url: 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=StarPilot&backgroundColor=112836' },
+  { id: 'champion', name: 'Champion', url: 'https://api.dicebear.com/7.x/adventurer/svg?seed=ChampionGold&backgroundColor=2e2312' },
+];
+
 export const OnboardingScreen: React.FC = () => {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
@@ -35,6 +68,13 @@ export const OnboardingScreen: React.FC = () => {
   const [countrySearch, setCountrySearch] = useState('');
   const [isCountryDropdownOpen, setIsCountryDropdownOpen] = useState(false);
   const countryDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Profile Picture State
+  const [selectedAvatar, setSelectedAvatar] = useState<string>(
+    auth.currentUser?.photoURL || AVATAR_PRESETS[0].url
+  );
+  const [isCustomAvatar, setIsCustomAvatar] = useState<boolean>(false);
+  const avatarFileInputRef = useRef<HTMLInputElement>(null);
 
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
   const [selectedGames, setSelectedGames] = useState<string[]>([]);
@@ -83,6 +123,50 @@ export const OnboardingScreen: React.FC = () => {
     return () => clearTimeout(timer);
   }, [gamertag, step]);
 
+  const handleCustomAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 8 * 1024 * 1024) {
+      setErrorMsg('Image size should be less than 8MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_SIZE = 280;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_SIZE) {
+            height *= MAX_SIZE / width;
+            width = MAX_SIZE;
+          }
+        } else {
+          if (height > MAX_SIZE) {
+            width *= MAX_SIZE / height;
+            height = MAX_SIZE;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        setSelectedAvatar(dataUrl);
+        setIsCustomAvatar(true);
+        setErrorMsg(null);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
   const togglePlatform = (id: string) => {
     setSelectedPlatforms(prev => 
       prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
@@ -108,13 +192,15 @@ export const OnboardingScreen: React.FC = () => {
     country.trim().length > 0
   );
 
-  const isStep2Valid = selectedPlatforms.length > 0;
-  const isStep3Valid = selectedGames.length > 0;
+  const isStep2Valid = Boolean(selectedAvatar && selectedAvatar.trim().length > 0);
+  const isStep3Valid = selectedPlatforms.length > 0;
+  const isStep4Valid = selectedGames.length > 0;
 
   const isStepValid = () => {
     if (step === 1) return isStep1Valid;
     if (step === 2) return isStep2Valid;
     if (step === 3) return isStep3Valid;
+    if (step === 4) return isStep4Valid;
     return true;
   };
 
@@ -148,12 +234,18 @@ export const OnboardingScreen: React.FC = () => {
       }
       setStep(2);
     } else if (step === 2) {
-      if (selectedPlatforms.length === 0) {
-        setErrorMsg('Please select at least one gaming platform (compulsory).');
+      if (!selectedAvatar) {
+        setErrorMsg('Please select or upload a profile picture.');
         return;
       }
       setStep(3);
     } else if (step === 3) {
+      if (selectedPlatforms.length === 0) {
+        setErrorMsg('Please select at least one gaming platform (compulsory).');
+        return;
+      }
+      setStep(4);
+    } else if (step === 4) {
       if (selectedGames.length === 0) {
         setErrorMsg('Please select at least one main game (compulsory).');
         return;
@@ -163,7 +255,7 @@ export const OnboardingScreen: React.FC = () => {
         const user = auth.currentUser;
         if (!user) throw new Error('No authenticated user found.');
 
-        await setDoc(doc(db, 'users', user.uid), {
+        const profileData: Record<string, any> = {
           name: name.trim(),
           gamertag: gamertag.trim(),
           gamertagLower: gamertag.trim().toLowerCase(),
@@ -172,13 +264,28 @@ export const OnboardingScreen: React.FC = () => {
           platforms: selectedPlatforms,
           games: selectedGames,
           createdAt: new Date().toISOString(),
-          photoURL: user.photoURL || null,
-          email: user.email,
-        });
+          email: user.email || '',
+        };
+
+        if (selectedAvatar) {
+          profileData.photoURL = selectedAvatar;
+        }
+
+        await setDoc(doc(db, 'users', user.uid), profileData);
+
+        try {
+          await updateProfile(user, {
+            displayName: name.trim(),
+            ...(selectedAvatar ? { photoURL: selectedAvatar } : {})
+          });
+        } catch {
+          // non-blocking
+        }
+
         navigate('/home');
-      } catch (err) {
+      } catch (err: any) {
         console.error('Error saving profile:', err);
-        setErrorMsg('Failed to save profile. Please try again.');
+        setErrorMsg(err?.message ? `Failed to save profile: ${err.message}` : 'Failed to save profile. Please try again.');
       } finally {
         setLoading(false);
       }
@@ -188,7 +295,7 @@ export const OnboardingScreen: React.FC = () => {
   return (
     <div className="h-[100dvh] w-full bg-[#121212] text-white flex flex-col p-4 sm:p-6 overflow-hidden">
       {/* Tight, Clean Header */}
-      <header className="w-full flex items-center justify-between mb-3 sm:mb-4 pb-2 border-b border-[#2a2a2e]/50">
+      <header className="w-full flex items-center justify-between mb-3 sm:mb-4 pb-2 border-b border-[#2a2a2e]/50 shrink-0">
         <div className="flex items-center gap-2.5">
           {!logoError ? (
             <img 
@@ -205,7 +312,7 @@ export const OnboardingScreen: React.FC = () => {
         
         {/* Step Progress Indicators with Back-click ability */}
         <div className="flex items-center gap-2">
-          {[1, 2, 3].map(i => (
+          {[1, 2, 3, 4].map(i => (
             <button 
               key={i} 
               type="button"
@@ -225,7 +332,7 @@ export const OnboardingScreen: React.FC = () => {
               title={i < step ? `Go back to Step ${i}` : undefined}
             />
           ))}
-          <span className="text-xs font-mono text-[#888888] ml-1">Step {step}/3</span>
+          <span className="text-xs font-mono text-[#888888] ml-1">Step {step}/4</span>
         </div>
       </header>
 
@@ -238,6 +345,7 @@ export const OnboardingScreen: React.FC = () => {
         )}
 
         <div className="flex-1 overflow-y-auto min-h-0 pr-1">
+          {/* STEP 1: IDENTITY */}
           {step === 1 && (
             <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
               <div>
@@ -392,7 +500,131 @@ export const OnboardingScreen: React.FC = () => {
             </div>
           )}
 
+          {/* STEP 2: PROFILE PICTURE SELECTION */}
           {step === 2 && (
+            <div className="space-y-4 animate-in fade-in slide-in-from-right-8 duration-300">
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">Choose your avatar.</h1>
+                <p className="text-[#888888] text-xs sm:text-sm">
+                  Select a gamer persona or upload your own custom photo.
+                </p>
+              </div>
+
+              {/* Active Avatar Focus Card */}
+              <div className="p-4 rounded-2xl bg-[#18181b] border border-[#2a2a2e] flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
+                <div className="relative group shrink-0">
+                  <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full border-2 border-[#5003BD] bg-[#1f1b2e] p-1 shadow-[0_0_20px_rgba(80,3,189,0.35)] overflow-hidden flex items-center justify-center">
+                    <img 
+                      src={selectedAvatar} 
+                      alt="Selected Profile" 
+                      className="w-full h-full object-cover rounded-full"
+                    />
+                  </div>
+                  <div className="absolute -bottom-1 -right-1 bg-[#5003BD] p-1.5 rounded-full text-white border-2 border-[#18181b] shadow-md">
+                    <Sparkles className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+
+                <div className="flex-1 flex flex-col items-center sm:items-start text-center sm:text-left">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-base text-white">{name || 'Gamer Profile'}</h3>
+                    {country && <span className="text-sm">{getCountryFlag(country)}</span>}
+                  </div>
+                  <p className="text-[#888888] text-xs font-mono mb-3">
+                    @{gamertag || 'gamertag'}
+                  </p>
+
+                  <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-start">
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      className="hidden" 
+                      ref={avatarFileInputRef} 
+                      onChange={handleCustomAvatarUpload}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => avatarFileInputRef.current?.click()}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#2a2a30] hover:bg-[#383842] text-xs font-semibold text-white border border-[#3f3f4a] transition-colors cursor-pointer shadow-sm"
+                    >
+                      <Camera className="w-3.5 h-3.5 text-[#a855f7]" />
+                      <span>{isCustomAvatar ? 'Change Custom Photo' : 'Upload Custom Photo'}</span>
+                    </button>
+
+                    {isCustomAvatar && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCustomAvatar(false);
+                          setSelectedAvatar(AVATAR_PRESETS[0].url);
+                        }}
+                        className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-xs text-red-400 border border-red-500/30 transition-colors cursor-pointer"
+                        title="Remove uploaded photo and return to gamer presets"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Presets</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Gamer Avatars Grid */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-[#aaaaaa] uppercase tracking-wider">
+                    Gamer Personas
+                  </span>
+                  <span className="text-[11px] font-mono text-[#777777]">
+                    Tap to select
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2.5 max-h-56 overflow-y-auto pr-1">
+                  {AVATAR_PRESETS.map((avatar) => {
+                    const isSelected = selectedAvatar === avatar.url;
+                    return (
+                      <button
+                        key={avatar.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedAvatar(avatar.url);
+                          setIsCustomAvatar(false);
+                          setErrorMsg(null);
+                        }}
+                        className={`relative rounded-2xl p-1.5 flex flex-col items-center gap-1 transition-all duration-200 cursor-pointer ${
+                          isSelected 
+                            ? 'bg-[#5003BD]/20 border-2 border-[#5003BD] shadow-[0_0_12px_rgba(80,3,189,0.4)] scale-102' 
+                            : 'bg-[#1a1a1a] border border-[#2a2a2e] hover:border-[#44444e] hover:bg-[#222228]'
+                        }`}
+                      >
+                        <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full overflow-hidden bg-[#141416] flex items-center justify-center">
+                          <img 
+                            src={avatar.url} 
+                            alt={avatar.name} 
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        </div>
+                        <span className="text-[10px] font-medium text-[#cccccc] truncate w-full text-center">
+                          {avatar.name}
+                        </span>
+
+                        {isSelected && (
+                          <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-[#5003BD] text-white flex items-center justify-center shadow">
+                            <Check className="w-2.5 h-2.5 stroke-[3]" />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3: PLATFORMS */}
+          {step === 3 && (
             <div className="space-y-4 animate-in fade-in slide-in-from-right-8 duration-300">
               <div>
                 <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">Select your arsenal.</h1>
@@ -426,7 +658,8 @@ export const OnboardingScreen: React.FC = () => {
             </div>
           )}
 
-          {step === 3 && (
+          {/* STEP 4: GAMES */}
+          {step === 4 && (
             <div className="space-y-4 animate-in fade-in slide-in-from-right-8 duration-300">
               <div>
                 <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">Your main games.</h1>
@@ -460,7 +693,7 @@ export const OnboardingScreen: React.FC = () => {
         </div>
 
         {/* Footer Navigation with Back Button */}
-        <div className="pt-3 pb-2 flex items-center justify-between border-t border-[#2a2a2e]/50 mt-auto">
+        <div className="pt-3 pb-2 flex items-center justify-between border-t border-[#2a2a2e]/50 mt-auto shrink-0">
           {step > 1 ? (
             <button
               type="button"
@@ -487,7 +720,7 @@ export const OnboardingScreen: React.FC = () => {
               <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
             ) : (
               <>
-                {step === 3 ? 'COMPLETE SETUP' : 'CONTINUE'}
+                {step === 4 ? 'COMPLETE SETUP' : 'CONTINUE'}
                 <ChevronRight className="w-4 h-4" />
               </>
             )}
