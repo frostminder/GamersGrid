@@ -8,7 +8,9 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { ProfileTab } from '../components/ProfileTab';
 import { TournamentHub } from '../components/TournamentHub';
-import { SearchMockup, CreateMockup, MessagesMockup, SettingsMockup } from '../components/MockupScreens';
+import { CreateMockup, MessagesMockup, SettingsMockup } from '../components/MockupScreens';
+import { SearchScreen } from '../components/SearchScreen';
+import { NotificationsScreen } from '../components/NotificationsScreen';
 import { MOCK_TOURNAMENTS, INITIAL_WALLET } from '../types/mockData';
 
 export const HomeScreen: React.FC = () => {
@@ -86,8 +88,11 @@ export const HomeScreen: React.FC = () => {
           
           <div className="flex items-center gap-4">
             {/* Notification Bell */}
-            <button className="relative p-2 rounded-full hover:bg-[#2a2a2e] transition-colors group">
-              <Bell className="w-5 h-5 text-[#aaaaaa] group-hover:text-white transition-colors" />
+            <button 
+              onClick={() => setActiveTab('notifications')}
+              className={`relative p-2 rounded-full transition-colors group ${activeTab === 'notifications' ? 'bg-[#2a2a2e]' : 'hover:bg-[#2a2a2e]'}`}
+            >
+              <Bell className={`w-5 h-5 transition-colors ${activeTab === 'notifications' ? 'text-white' : 'text-[#aaaaaa] group-hover:text-white'}`} />
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#5003BD] rounded-full border border-[#121212]"></span>
             </button>
             
@@ -155,9 +160,12 @@ export const HomeScreen: React.FC = () => {
         )}
 
         {activeTab === 'search' && (
-          <SearchMockup />
+          <SearchScreen />
         )}
 
+        {activeTab === 'notifications' && (
+          <NotificationsScreen />
+        )}
         {activeTab === 'create' && (
           <CreateMockup />
         )}

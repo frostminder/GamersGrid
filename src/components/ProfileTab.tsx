@@ -4,6 +4,9 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { LogOut, Settings, Camera, Crown, Plus, Image as ImageIcon, Eye, Play } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
+import { getFollowStats, getFollowers, getFollowing, UserProfile } from '../lib/userService';
+import { UserListModal } from './UserListModal';
+import { PublicProfileModal } from './PublicProfileModal';
 
 interface ProfileTabProps {
   onNavigate?: (tab: string) => void;
@@ -17,6 +20,11 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onNavigate }) => {
   const bannerInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState('Posts');
 
+  const [stats, setStats] = useState({ followers: 0, following: 0 });
+  const [showListModal, setShowListModal] = useState<'followers' | 'following' | null>(null);
+  const [listUsers, setListUsers] = useState<UserProfile[]>([]);
+  const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
+
   useEffect(() => {
     const fetchProfile = async () => {
       if (auth.currentUser) {
@@ -25,11 +33,25 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onNavigate }) => {
         if (docSnap.exists()) {
           setProfile(docSnap.data());
         }
+        const s = await getFollowStats(auth.currentUser.uid);
+        setStats({ followers: s.followersCount, following: s.followingCount });
       }
       setLoading(false);
     };
     fetchProfile();
   }, []);
+
+  const handleOpenList = async (type: 'followers' | 'following') => {
+    if (!auth.currentUser) return;
+    setShowListModal(type);
+    if (type === 'followers') {
+      const users = await getFollowers(auth.currentUser.uid);
+      setListUsers(users);
+    } else {
+      const users = await getFollowing(auth.currentUser.uid);
+      setListUsers(users);
+    }
+  };
 
   const handleSignOut = async () => {
     await signOut(auth);
@@ -201,9 +223,12 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onNavigate }) => {
 
         {/* Stats Row */}
         <div className="flex w-full max-w-md justify-between mt-8 mb-2 px-2">
-          <div className="flex flex-col items-center flex-1">
+          <div 
+            onClick={() => handleOpenList('followers')}
+            className="flex flex-col items-center flex-1 cursor-pointer hover:opacity-80"
+          >
             <span className="text-[#aaaaaa] text-[13px] font-mono mb-1">Followers</span>
-            <span className="text-xl font-black text-white">42.2K</span>
+            <span className="text-xl font-black text-white">{stats.followers}</span>
           </div>
           <div className="w-px bg-[#2a2a2e] my-1"></div>
           <div className="flex flex-col items-center flex-1">
@@ -211,9 +236,12 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onNavigate }) => {
             <span className="text-xl font-black text-white">44K</span>
           </div>
           <div className="w-px bg-[#2a2a2e] my-1"></div>
-          <div className="flex flex-col items-center flex-1">
+          <div 
+            onClick={() => handleOpenList('following')}
+            className="flex flex-col items-center flex-1 cursor-pointer hover:opacity-80"
+          >
             <span className="text-[#aaaaaa] text-[13px] font-mono mb-1">Following</span>
-            <span className="text-xl font-black text-white">332</span>
+            <span className="text-xl font-black text-white">{stats.following}</span>
           </div>
         </div>
 
@@ -281,6 +309,19 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onNavigate }) => {
         </div>
 
       </div>
+      
+      {showListModal && !selectedUser && (
+        <UserListModal 
+          title={showListModal === 'followers' ? 'Followers' : 'Following'}
+          users={listUsers}
+          onClose={() => setShowListModal(null)}
+          onUserClick={(u) => setSelectedUser(u)}
+        />
+      )}
+      
+      {selectedUser && (
+        <PublicProfileModal user={selectedUser} onClose={() => setSelectedUser(null)} />
+      )}
     </div>
   );
 };
