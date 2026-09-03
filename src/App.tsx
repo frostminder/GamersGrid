@@ -14,7 +14,7 @@ function AppContent() {
   const navigate = useNavigate();
 
   return (
-    <div className="w-full min-h-screen bg-[#121212] text-white flex flex-col items-center justify-center">
+    <div className="w-full h-[100dvh] overflow-y-auto bg-[#121212] text-white flex flex-col items-center justify-start hide-scrollbar">
       <Routes>
         <Route path="/" element={<SplashScreen autoComplete={true} onComplete={() => navigate('/auth')} />} />
         <Route path="/auth" element={<AuthScreen />} />
