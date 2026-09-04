@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   MessageSquare, Users, Globe, Search, Plus, Send, X, 
-  Check, CheckCheck, ArrowLeft, UserCheck, ChevronRight, Hash, 
-  UserPlus
+  Check, ArrowLeft, UserCheck, ChevronRight, Hash, 
+  UserPlus, Reply, Trash2, Ban
 } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
 import { 
@@ -40,6 +40,12 @@ interface ChatMessage {
   read?: boolean;
   readAt?: any;
   delivered?: boolean;
+  isDeleted?: boolean;
+  replyTo?: {
+    id: string;
+    text: string;
+    senderName: string;
+  } | null;
 }
 
 interface FirestoreChat {
@@ -88,6 +94,185 @@ export interface MessagesScreenProps {
   onChatActiveChange?: (active: boolean) => void;
 }
 
+// Swipeable message row supporting swipe-right to reply, desktop hover actions, and deleted message states
+interface SwipeableMessageRowProps {
+  msg: ChatMessage;
+  onReply: (msg: ChatMessage) => void;
+  onDeletePrompt: (msg: ChatMessage) => void;
+  renderTicks: (msg: ChatMessage) => React.ReactNode;
+  formatTime: (time: any) => string;
+}
+
+const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
+  msg,
+  onReply,
+  onDeletePrompt,
+  renderTicks,
+  formatTime,
+}) => {
+  const [offsetX, setOffsetX] = useState(0);
+  const [isSwiping, setIsSwiping] = useState(false);
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const isHorizontalSwipe = useRef<boolean | null>(null);
+  const hasVibrated = useRef(false);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (msg.isDeleted) return;
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+    isHorizontalSwipe.current = null;
+    hasVibrated.current = false;
+    setIsSwiping(true);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (msg.isDeleted || !isSwiping) return;
+    const currentX = e.touches[0].clientX;
+    const currentY = e.touches[0].clientY;
+    const diffX = currentX - touchStartX.current;
+    const diffY = currentY - touchStartY.current;
+
+    // Detect horizontal swipe intention
+    if (isHorizontalSwipe.current === null) {
+      if (Math.abs(diffX) > 6 || Math.abs(diffY) > 6) {
+        isHorizontalSwipe.current = diffX > 0 && Math.abs(diffX) > Math.abs(diffY);
+      }
+    }
+
+    if (isHorizontalSwipe.current) {
+      if (diffX > 0) {
+        // Damped right swipe up to 65px
+        const clamped = Math.min(diffX * 0.55, 65);
+        setOffsetX(clamped);
+
+        if (clamped >= 38 && !hasVibrated.current) {
+          hasVibrated.current = true;
+          try {
+            navigator.vibrate?.(12);
+          } catch {
+            // Ignore vibration error
+          }
+        }
+      } else {
+        setOffsetX(0);
+      }
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (offsetX >= 38 && !msg.isDeleted) {
+      onReply(msg);
+    }
+    setOffsetX(0);
+    setIsSwiping(false);
+    isHorizontalSwipe.current = null;
+    hasVibrated.current = false;
+  };
+
+  return (
+    <div 
+      className={`relative w-full flex flex-col ${msg.isMe ? 'items-end' : 'items-start'} group select-none`}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
+    >
+      {/* Swipe Reply indicator icon on the left (pops up when swiping right) */}
+      <div 
+        className="absolute left-1 top-1/2 -translate-y-1/2 pointer-events-none transition-transform z-10 flex items-center justify-center"
+        style={{
+          opacity: Math.min(offsetX / 32, 1),
+          transform: `translateY(-50%) scale(${Math.min(0.6 + (offsetX / 75), 1)})`,
+        }}
+      >
+        <div className={`w-7 h-7 rounded-full flex items-center justify-center ${
+          offsetX >= 38 ? 'bg-[#5003BD] text-white shadow-lg shadow-[#5003BD]/50' : 'bg-zinc-800 text-zinc-300'
+        }`}>
+          <Reply className="w-3.5 h-3.5" />
+        </div>
+      </div>
+
+      {!msg.isMe && (
+        <span className="text-[11px] text-[#71717a] font-medium ml-1 mb-1">
+          {msg.senderName}
+        </span>
+      )}
+
+      <div className="relative flex items-center gap-1.5 max-w-[85%] sm:max-w-[70%]">
+        {/* Quick action buttons on hover / touch */}
+        {!msg.isDeleted && (
+          <div className={`opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0 ${msg.isMe ? 'order-first' : 'order-last'}`}>
+            <button
+              type="button"
+              onClick={() => onReply(msg)}
+              className="p-1.5 rounded-lg bg-[#27272a]/90 hover:bg-[#3f3f46] text-zinc-400 hover:text-white transition-colors cursor-pointer"
+              title="Reply"
+            >
+              <Reply className="w-3.5 h-3.5" />
+            </button>
+            {msg.isMe && (
+              <button
+                type="button"
+                onClick={() => onDeletePrompt(msg)}
+                className="p-1.5 rounded-lg bg-[#27272a]/90 hover:bg-red-950/60 text-zinc-400 hover:text-red-400 transition-colors cursor-pointer"
+                title="Delete for everyone"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Message Bubble with dynamic translation */}
+        <div 
+          style={{
+            transform: `translateX(${offsetX}px)`,
+            transition: isSwiping ? 'none' : 'transform 0.2s cubic-bezier(0.2, 0, 0, 1)',
+          }}
+          className={`relative px-3.5 py-2 rounded-2xl text-sm leading-relaxed ${
+            msg.isDeleted
+              ? 'bg-[#1a1a20]/80 border border-zinc-800/80 text-zinc-400 rounded-bl-xs'
+              : msg.isMe 
+                ? 'bg-[#5003BD] text-white rounded-br-xs shadow-md shadow-[#5003BD]/20' 
+                : 'bg-[#27272a] text-[#f4f4f5] rounded-bl-xs border border-[#3f3f46]/50'
+          }`}
+        >
+          {/* Quoted reply preview (WhatsApp-style card with vertical accent bar) */}
+          {!msg.isDeleted && msg.replyTo && (
+            <div className="mb-2 p-2 rounded-lg bg-black/25 border-l-3 border-[#a855f7] text-left">
+              <div className="text-[11px] font-bold text-[#a855f7] truncate">
+                {msg.replyTo.senderName}
+              </div>
+              <div className="text-[11px] text-zinc-300 truncate opacity-90">
+                {msg.replyTo.text}
+              </div>
+            </div>
+          )}
+
+          {/* Message Text or Deleted Notice */}
+          {msg.isDeleted ? (
+            <div className="flex items-center gap-1.5 italic text-zinc-400 text-xs py-0.5">
+              <Ban className="w-3.5 h-3.5 shrink-0 text-zinc-500" />
+              <span>{msg.isMe ? 'You deleted this message' : 'This message was deleted'}</span>
+            </div>
+          ) : (
+            <p className="break-words">{msg.text}</p>
+          )}
+
+          {/* Time & authentic WhatsApp ticks */}
+          <div className={`text-[10px] mt-1 text-right flex items-center justify-end gap-1 ${
+            msg.isMe && !msg.isDeleted ? 'text-purple-200' : 'text-[#71717a]'
+          }`}>
+            <span>{formatTime(msg.createdAt)}</span>
+            {renderTicks(msg)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChange }) => {
   const [activeTab, setActiveTab] = useState<'inbox' | 'groups' | 'community'>('inbox');
   const [mutuals, setMutuals] = useState<MutualGamer[]>([]);
@@ -111,6 +296,11 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
   const [messageInput, setMessageInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Swipe to reply and Message delete state
+  const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
+  const [messageToDelete, setMessageToDelete] = useState<ChatMessage | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Notify parent of active chat status so header/bottom-nav can hide
   useEffect(() => {
@@ -268,6 +458,8 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
             read: data.read ?? false,
             readAt: data.readAt,
             delivered: data.delivered ?? false,
+            isDeleted: data.isDeleted ?? false,
+            replyTo: data.replyTo ?? null,
           });
         });
         setCurrentMessages(msgs);
@@ -307,6 +499,8 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
             read: data.read ?? false,
             readAt: data.readAt,
             delivered: data.delivered ?? false,
+            isDeleted: data.isDeleted ?? false,
+            replyTo: data.replyTo ?? null,
           });
         });
         setCurrentMessages(msgs);
@@ -331,6 +525,8 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
             read: data.read ?? false,
             readAt: data.readAt,
             delivered: data.delivered ?? false,
+            isDeleted: data.isDeleted ?? false,
+            replyTo: data.replyTo ?? null,
           });
         });
         setCurrentMessages(msgs);
@@ -449,46 +645,90 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
     onChatActiveChange?.(false);
   };
 
-  // Render WhatsApp-style message ticks:
+  // Render authentic WhatsApp-style message ticks:
   // 1 tick: sent (recipient is offline)
-  // 2 ticks: user is online or standby (delivered)
-  // Blue tick: message read
+  // 2 ticks: recipient is online or in standby (delivered)
+  // Blue ticks: message read
   const renderMessageTicks = (msg: ChatMessage) => {
-    if (!msg.isMe) return null;
+    if (!msg.isMe || msg.isDeleted) return null;
 
     // 1. Blue double check: Message has been read
     if (msg.read) {
       return (
-        <CheckCheck 
-          className="w-3.5 h-3.5 text-[#00a3ff] drop-shadow-[0_0_5px_rgba(0,163,255,0.7)] shrink-0" 
-          strokeWidth={2.5} 
-          title="Read"
-        />
+        <span className="inline-flex items-center -space-x-1.5 text-[#53bdeb]" title="Read">
+          <Check className="w-3.5 h-3.5" strokeWidth={2.5} />
+          <Check className="w-3.5 h-3.5" strokeWidth={2.5} />
+        </span>
       );
     }
 
-    // 2. Double check (grey/white): Recipient is online or in standby (background), or message marked delivered
+    // 2. Double check (grey): Recipient is online or in standby (background), or message marked delivered
     const partnerStatus = activeChatGamer ? (presences[activeChatGamer.uid] || 'offline') : 'offline';
     const isOnlineOrStandby = msg.delivered || partnerStatus === 'online' || partnerStatus === 'background';
 
     if (isOnlineOrStandby) {
       return (
-        <CheckCheck 
-          className="w-3.5 h-3.5 text-zinc-300 shrink-0" 
-          strokeWidth={2} 
-          title="Delivered (User online/standby)"
-        />
+        <span className="inline-flex items-center -space-x-1.5 text-zinc-400" title="Delivered">
+          <Check className="w-3.5 h-3.5" strokeWidth={2.5} />
+          <Check className="w-3.5 h-3.5" strokeWidth={2.5} />
+        </span>
       );
     }
 
     // 3. Single check (grey): Sent, but recipient is offline (app closed / not running)
     return (
       <Check 
-        className="w-3.5 h-3.5 text-zinc-400 shrink-0" 
-        strokeWidth={2} 
-        title="Sent (Offline)"
+        className="w-3.5 h-3.5 text-zinc-400 shrink-0 inline-block" 
+        strokeWidth={2.5} 
+        title="Sent"
       />
     );
+  };
+
+  // Delete message for everyone
+  const handleDeleteMessage = async () => {
+    if (!messageToDelete || !currentUser || isDeleting) return;
+    setIsDeleting(true);
+
+    try {
+      const targetId = messageToDelete.id;
+      if (activeChatId) {
+        await updateDoc(doc(db, 'chats', activeChatId, 'messages', targetId), {
+          isDeleted: true,
+          text: 'This message was deleted',
+          deletedAt: serverTimestamp(),
+          replyTo: null,
+        });
+
+        // Update chat doc's lastMessage preview if this was the last message
+        const currentChat = chats.find(c => c.id === activeChatId);
+        if (currentChat?.lastMessage === messageToDelete.text) {
+          await setDoc(doc(db, 'chats', activeChatId), {
+            lastMessage: 'This message was deleted',
+            updatedAt: serverTimestamp(),
+          }, { merge: true });
+        }
+      } else if (activeGroup) {
+        await updateDoc(doc(db, 'groups', activeGroup.id, 'messages', targetId), {
+          isDeleted: true,
+          text: 'This message was deleted',
+          deletedAt: serverTimestamp(),
+          replyTo: null,
+        });
+      } else if (activeCommunity) {
+        await updateDoc(doc(db, 'communities', activeCommunity.id, 'messages', targetId), {
+          isDeleted: true,
+          text: 'This message was deleted',
+          deletedAt: serverTimestamp(),
+          replyTo: null,
+        });
+      }
+    } catch (err) {
+      console.error('Error deleting message:', err);
+    } finally {
+      setIsDeleting(false);
+      setMessageToDelete(null);
+    }
   };
 
   // Send Message in active conversation
@@ -497,7 +737,14 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
     if (!messageInput.trim() || isSending || !currentUser) return;
 
     const text = messageInput.trim();
+    const replyPayload = replyingTo ? {
+      id: replyingTo.id,
+      text: replyingTo.text,
+      senderName: replyingTo.isMe ? 'You' : replyingTo.senderName,
+    } : null;
+
     setMessageInput('');
+    setReplyingTo(null);
     setIsSending(true);
 
     try {
@@ -514,6 +761,8 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
           createdAt: serverTimestamp(),
           read: false,
           delivered: isDelivered,
+          isDeleted: false,
+          replyTo: replyPayload,
         });
 
         await setDoc(doc(db, 'chats', activeChatId), {
@@ -535,6 +784,8 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
           createdAt: serverTimestamp(),
           read: false,
           delivered: true,
+          isDeleted: false,
+          replyTo: replyPayload,
         });
 
         await setDoc(doc(db, 'groups', activeGroup.id), {
@@ -552,6 +803,8 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
           createdAt: serverTimestamp(),
           read: false,
           delivered: true,
+          isDeleted: false,
+          replyTo: replyPayload,
         });
 
         await setDoc(doc(db, 'communities', activeCommunity.id), {
@@ -771,31 +1024,18 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
             </div>
           ) : (
             currentMessages.map((msg) => (
-              <div 
-                key={msg.id} 
-                className={`flex flex-col ${msg.isMe ? 'items-end' : 'items-start'}`}
-              >
-                {!msg.isMe && (
-                  <span className="text-[11px] text-[#71717a] font-medium ml-1 mb-1">
-                    {msg.senderName}
-                  </span>
-                )}
-                <div 
-                  className={`max-w-[82%] sm:max-w-[70%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
-                    msg.isMe 
-                      ? 'bg-[#5003BD] text-white rounded-br-xs shadow-md shadow-[#5003BD]/20' 
-                      : 'bg-[#27272a] text-[#f4f4f5] rounded-bl-xs border border-[#3f3f46]/50'
-                  }`}
-                >
-                  <p className="break-words">{msg.text}</p>
-                  <div className={`text-[10px] mt-1 text-right flex items-center justify-end gap-1.5 ${
-                    msg.isMe ? 'text-purple-200' : 'text-[#71717a]'
-                  }`}>
-                    <span>{formatTime(msg.createdAt)}</span>
-                    {renderMessageTicks(msg)}
-                  </div>
-                </div>
-              </div>
+              <SwipeableMessageRow
+                key={msg.id}
+                msg={msg}
+                onReply={(targetMsg) => {
+                  setReplyingTo(targetMsg);
+                }}
+                onDeletePrompt={(targetMsg) => {
+                  setMessageToDelete(targetMsg);
+                }}
+                renderTicks={renderMessageTicks}
+                formatTime={formatTime}
+              />
             ))
           )}
           <div ref={messagesEndRef} />
@@ -815,13 +1055,44 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
           </div>
         )}
 
+        {/* WhatsApp-Style Replying Preview Bar */}
+        {replyingTo && (
+          <div className="px-4 py-2.5 bg-[#18181b] border-t border-[#2a2a2e] flex items-center justify-between gap-3 animate-in slide-in-from-bottom-2 shrink-0">
+            <div className="flex items-start gap-2.5 min-w-0 border-l-3 border-[#a855f7] pl-2.5 py-0.5">
+              <Reply className="w-3.5 h-3.5 text-[#a855f7] shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-[#a855f7] leading-tight">
+                  Replying to {replyingTo.isMe ? 'yourself' : replyingTo.senderName}
+                </p>
+                <p className="text-xs text-zinc-300 truncate mt-0.5 opacity-90 max-w-[280px] sm:max-w-md">
+                  {replyingTo.text}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setReplyingTo(null)}
+              className="p-1 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer shrink-0"
+              title="Cancel reply"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* Message Input Box (Bottom edge-to-edge, full screen) */}
         <form onSubmit={handleSendMessage} className="p-3 bg-[#18181b] border-t border-[#2a2a2e] flex items-center gap-2 shrink-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <input
             type="text"
             value={messageInput}
             onChange={handleMessageInputChange}
-            placeholder={activeChatGamer ? `Message @${activeChatGamer.gamertag}...` : "Type a message..."}
+            placeholder={
+              replyingTo
+                ? `Reply to ${replyingTo.isMe ? 'yourself' : replyingTo.senderName}...`
+                : activeChatGamer 
+                  ? `Message @${activeChatGamer.gamertag}...` 
+                  : "Type a message..."
+            }
             className="flex-1 bg-[#121212] text-white text-sm px-4 py-3 rounded-xl border border-[#2a2a2e] focus:outline-none focus:border-[#5003BD] placeholder:text-[#71717a]"
           />
           <button
@@ -832,6 +1103,46 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
             <Send className="w-4 h-4" />
           </button>
         </form>
+
+        {/* Delete Message Confirmation Modal */}
+        {messageToDelete && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
+            <div className="w-full max-w-sm bg-[#18181b] border border-[#2a2a2e] rounded-2xl p-5 shadow-2xl space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-400 shrink-0">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-white font-bold text-base leading-tight">Delete message?</h4>
+                  <p className="text-xs text-[#a1a1aa] mt-0.5">This message will be deleted for everyone in this chat.</p>
+                </div>
+              </div>
+
+              <div className="bg-[#121212] p-3 rounded-xl border border-[#27272a] text-xs text-zinc-300 italic truncate">
+                "{messageToDelete.text}"
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setMessageToDelete(null)}
+                  disabled={isDeleting}
+                  className="px-4 py-2 rounded-xl text-sm font-medium text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteMessage}
+                  disabled={isDeleting}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 transition-colors shadow-lg shadow-red-600/30 cursor-pointer flex items-center gap-1.5"
+                >
+                  {isDeleting ? 'Deleting...' : 'Delete for everyone'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -1144,8 +1455,13 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
                             @{partner.gamertag}
                           </span>
                         </div>
-                        <p className="text-xs text-[#a1a1aa] truncate max-w-[210px] sm:max-w-[360px]">
-                          {chat.lastMessage || 'Tap to open chat'}
+                        <p className={`text-xs truncate max-w-[210px] sm:max-w-[360px] ${
+                          chat.lastMessage === 'This message was deleted' ? 'italic text-zinc-500 flex items-center gap-1' : 'text-[#a1a1aa]'
+                        }`}>
+                          {chat.lastMessage === 'This message was deleted' && (
+                            <Ban className="w-3 h-3 text-zinc-500 inline shrink-0" />
+                          )}
+                          <span>{chat.lastMessage || 'Tap to open chat'}</span>
                         </p>
                       </div>
                     </div>
