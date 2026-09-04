@@ -131,7 +131,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onNavigate }) => {
     <div className="w-full min-h-screen bg-[#1c1c1f] flex flex-col animate-in fade-in duration-300 pb-20">
       
       {/* Banner Section */}
-      <div className="relative w-full h-48 sm:h-64 bg-[#121212] flex-shrink-0">
+      <div className="relative w-full h-48 sm:h-64 bg-[#121212] flex-shrink-0 z-0">
         {profile.bannerURL ? (
           <img src={profile.bannerURL} alt="Banner" className="w-full h-full object-cover" />
         ) : (
@@ -168,7 +168,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onNavigate }) => {
       </div>
 
       {/* Profile Details Container */}
-      <div className="w-full max-w-4xl mx-auto px-4 -mt-16 sm:-mt-24 relative z-10 flex flex-col items-center">
+      <div className="w-full max-w-4xl mx-auto px-4 -mt-16 sm:-mt-24 relative z-20 flex flex-col items-center">
         
         {/* Avatar */}
         <div className="relative group">

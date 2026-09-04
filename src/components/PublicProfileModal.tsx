@@ -47,23 +47,26 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({ user, on
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#121212]">
       <div className="bg-[#121212] w-full h-full flex flex-col animate-in slide-in-from-bottom-8 overflow-hidden">
-        {/* Banner */}
-        <div className="relative h-32 bg-[#2a2a2e] shrink-0">
-          {activeUser.bannerURL && (
-            <img src={activeUser.bannerURL} alt="Banner" className="w-full h-full object-cover" />
-          )}
-          <button 
-            onClick={handleClose} 
-            className="absolute top-4 right-4 p-2 bg-black/50 backdrop-blur-md rounded-full text-white hover:bg-black/70 transition-colors z-10"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
         <div className="flex-1 overflow-y-auto hide-scrollbar pb-10">
-          <div className="px-5 -mt-12 mb-4 relative z-10">
+          {/* Banner Section */}
+          <div className="relative h-36 sm:h-44 bg-[#2a2a2e] w-full shrink-0 z-0">
+            {activeUser.bannerURL ? (
+              <img src={activeUser.bannerURL} alt="Banner" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full bg-gradient-to-r from-[#2a2a2e] to-[#1a1a1a]" />
+            )}
+            <button 
+              onClick={handleClose} 
+              className="absolute top-4 right-4 p-2 bg-black/50 backdrop-blur-md rounded-full text-white hover:bg-black/70 transition-colors z-30 cursor-pointer shadow-lg"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Profile Details Container */}
+          <div className="px-5 -mt-12 mb-4 relative z-20">
             <div className="flex justify-between items-end">
-              <div className="w-24 h-24 rounded-full border-4 border-[#1a1a1a] bg-[#2a2a2e] overflow-hidden">
+              <div className="w-24 h-24 rounded-full border-4 border-[#121212] bg-[#2a2a2e] overflow-hidden shadow-2xl relative z-20">
                 {activeUser.photoURL ? (
                   <img src={activeUser.photoURL} alt={activeUser.gamertag} className="w-full h-full object-cover" />
                 ) : (
