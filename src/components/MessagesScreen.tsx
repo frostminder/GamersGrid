@@ -450,6 +450,34 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
   const [mutuals, setMutuals] = useState<MutualGamer[]>([]);
   const [presences, setPresences] = useState<Record<string, PresenceStatus>>({});
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Friends sorted by priority:
+  // 1. Online first (green)
+  // 2. Standby / background second (amber)
+  // 3. Offline last (red)
+  const sortedFriends = useMemo(() => {
+    const getPriority = (status: PresenceStatus) => {
+      if (status === 'online') return 0;
+      if (status === 'background') return 1; // Standby
+      return 2; // Offline
+    };
+
+    return [...mutuals].sort((a, b) => {
+      const statusA = presences[a.uid] || a.status || 'offline';
+      const statusB = presences[b.uid] || b.status || 'offline';
+      const priorityA = getPriority(statusA);
+      const priorityB = getPriority(statusB);
+
+      if (priorityA !== priorityB) {
+        return priorityA - priorityB;
+      }
+
+      // Secondary alphabetical sort for consistent layout
+      const nameA = a.gamertag || a.name || '';
+      const nameB = b.gamertag || b.name || '';
+      return nameA.localeCompare(nameB);
+    });
+  }, [mutuals, presences]);
   
   // Real Firestore Data
   const [chats, setChats] = useState<FirestoreChat[]>([]);
@@ -765,7 +793,7 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
         return {
           bg: 'bg-amber-400',
           glow: 'shadow-[0_0_8px_rgba(251,191,36,0.8)]',
-          label: 'In Background',
+          label: 'Standby',
         };
       case 'offline':
       default:
@@ -1761,7 +1789,7 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.8)]" />
-            Background
+            Standby
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.8)]" />
@@ -1771,18 +1799,18 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
       </div>
 
       {/* ======================================================== */}
-      {/* TOP ROW: REAL PROFILES OF THOSE WHO MUTUALLY FOLLOW       */}
+      {/* TOP ROW: FRIENDS (SORTED: ONLINE, STANDBY, OFFLINE)     */}
       {/* ======================================================== */}
       <div className="bg-[#18181c] border border-[#2a2a2e] rounded-2xl p-3.5 shadow-lg">
         <div className="flex items-center justify-between mb-3 px-1">
           <div className="flex items-center gap-2">
-            <UserCheck className="w-4 h-4 text-[#5003BD]" />
+            <Users className="w-4 h-4 text-[#5003BD]" />
             <span className="text-xs font-bold uppercase tracking-wider text-[#a1a1aa]">
-              Mutual Follows
+              Friends
             </span>
-            {mutuals.length > 0 && (
+            {sortedFriends.length > 0 && (
               <span className="text-[10px] bg-[#5003BD]/20 text-purple-300 px-2 py-0.5 rounded-full font-bold">
-                {mutuals.length}
+                {sortedFriends.length}
               </span>
             )}
           </div>
@@ -1795,15 +1823,15 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
           </button>
         </div>
 
-        {/* Horizontal scroll list of mutual follow avatars with status dots */}
+        {/* Horizontal scroll list of friends sorted by presence priority */}
         <div className="flex items-center gap-4 overflow-x-auto hide-scrollbar py-1 px-1">
-          {mutuals.length === 0 ? (
+          {sortedFriends.length === 0 ? (
             <div className="w-full text-center py-3 px-2 flex flex-col items-center justify-center">
               <p className="text-xs text-[#a1a1aa]">
-                No mutual followers yet.
+                No friends yet.
               </p>
               <p className="text-[11px] text-[#71717a] mt-0.5">
-                When you and another tester follow each other, their live status and profile will show here.
+                When you and another gamer follow each other, their live status and profile will show here.
               </p>
               <button
                 onClick={() => setShowNewChatModal(true)}
@@ -1814,7 +1842,7 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
               </button>
             </div>
           ) : (
-            mutuals.map((gamer) => {
+            sortedFriends.map((gamer) => {
               const status = getStatusColor(gamer.uid, gamer.status);
               return (
                 <button
@@ -1976,7 +2004,7 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
               <MessageSquare className="w-8 h-8 text-[#5003BD] mx-auto mb-2 opacity-60" />
               <p className="text-white font-bold text-sm">No conversations yet</p>
               <p className="text-xs mt-1 max-w-sm mx-auto text-[#a1a1aa]">
-                Select a mutual friend from the top row or search registered players to send your first message.
+                Select a friend from the top row or search registered players to send your first message.
               </p>
               <button
                 onClick={() => setShowNewChatModal(true)}
