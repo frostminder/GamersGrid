@@ -32,6 +32,8 @@ const PLATFORMS = [
 ];
 
 const GAMES = [
+  'Blood Strike',
+  'Free Fire',
   'Call of Duty: Warzone',
   'EA FC 25',
   'Valorant',
@@ -83,6 +85,80 @@ export const OnboardingScreen: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
   const [tagStatus, setTagStatus] = useState<'idle' | 'checking' | 'available' | 'taken'>('idle');
+
+  // Online game search states
+  const [gameSearchQuery, setGameSearchQuery] = useState('');
+  const [gameSuggestions, setGameSuggestions] = useState<string[]>([]);
+  const [searchingGames, setSearchingGames] = useState(false);
+
+  // Live dynamic game search from Wikipedia & iTunes APIs
+  useEffect(() => {
+    if (!gameSearchQuery.trim()) {
+      setGameSuggestions([]);
+      setSearchingGames(false);
+      return;
+    }
+
+    setSearchingGames(true);
+    const delayDebounce = setTimeout(async () => {
+      try {
+        const queryVal = gameSearchQuery.trim();
+        // Query Wikipedia OpenSearch and iTunes search in parallel
+        const wikiPromise = fetch(`https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(queryVal)}&limit=10&namespace=0&format=json&origin=*`)
+          .then(r => r.json())
+          .catch(() => null);
+        
+        const itunesPromise = fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(queryVal)}&entity=software&limit=10`)
+          .then(r => r.json())
+          .catch(() => null);
+
+        const [wikiData, itunesData] = await Promise.all([wikiPromise, itunesPromise]);
+        const resultsSet = new Set<string>();
+
+        // 1. Add matching pre-defined games
+        GAMES.forEach(g => {
+          if (g.toLowerCase().includes(queryVal.toLowerCase())) {
+            resultsSet.add(g);
+          }
+        });
+
+        // 2. Parse Wikipedia results
+        if (wikiData && wikiData[1]) {
+          for (const item of wikiData[1]) {
+            if (/list of|history of|series of|franchise|novel|film|soundtrack/i.test(item)) {
+              continue;
+            }
+            const clean = item.replace(/\s*\((video game|game|franchise|series)\)/gi, '').trim();
+            if (clean && clean.length > 2) {
+              resultsSet.add(clean);
+            }
+          }
+        }
+
+        // 3. Parse iTunes Software results
+        if (itunesData && itunesData.results) {
+          for (const item of itunesData.results) {
+            if (item.primaryGenreName === 'Games') {
+              const clean = item.trackName.split(/[:\-–—]/)[0].trim();
+              if (clean && clean.length > 2) {
+                resultsSet.add(clean);
+              }
+            }
+          }
+        }
+
+        // Filter and cap
+        const finalResults = Array.from(resultsSet).filter(Boolean).slice(0, 10);
+        setGameSuggestions(finalResults);
+      } catch (err) {
+        console.error('Error searching games online:', err);
+      } finally {
+        setSearchingGames(false);
+      }
+    }, 350);
+
+    return () => clearTimeout(delayDebounce);
+  }, [gameSearchQuery]);
 
   // Close country dropdown on outside click
   useEffect(() => {
@@ -664,29 +740,114 @@ export const OnboardingScreen: React.FC = () => {
               <div>
                 <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">Your main games.</h1>
                 <p className="text-[#888888] text-xs sm:text-sm">
-                  Pick your favorite titles for your feed and tournaments. <span className="text-red-400 font-semibold">* Select at least 1</span>
+                  Search and pick your favorite titles. <span className="text-red-400 font-semibold">* Select at least 1</span>
                 </p>
               </div>
 
-              <div className="flex flex-wrap gap-2.5 pt-2">
-                {GAMES.map(game => {
-                  const isSelected = selectedGames.includes(game);
-                  return (
+              {/* 1. Dynamic Web Search Bar */}
+              <div className="space-y-2">
+                <div className="relative">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888888]" />
+                  <input
+                    type="text"
+                    placeholder="Search any game from the web (e.g. Elden Ring, Blood Strike, GTA)..."
+                    value={gameSearchQuery}
+                    onChange={(e) => setGameSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-12 py-3 rounded-xl border border-[#2a2a2e] bg-[#121214] text-white text-xs sm:text-sm focus:outline-none focus:border-[#5003BD] transition-all"
+                  />
+                  {gameSearchQuery ? (
                     <button
-                      key={game}
                       type="button"
-                      onClick={() => toggleGame(game)}
-                      className={`px-4 py-2.5 rounded-full border text-xs sm:text-sm transition-all duration-200 flex items-center gap-2 cursor-pointer ${
-                        isSelected 
-                          ? 'border-[#5003BD] bg-[#5003BD] text-white font-bold shadow-[0_0_15px_rgba(80,3,189,0.4)]' 
-                          : 'border-[#2a2a2e] bg-[#1a1a1a] text-[#aaaaaa] hover:bg-[#252528] hover:border-[#44444c]'
-                      }`}
+                      onClick={() => setGameSearchQuery('')}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-mono text-zinc-500 hover:text-white"
                     >
-                      {isSelected && <Check className="w-3.5 h-3.5" />}
-                      {game}
+                      CLEAR
                     </button>
-                  );
-                })}
+                  ) : searchingGames ? (
+                    <span className="absolute right-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 border-2 border-[#5003BD] border-t-transparent rounded-full animate-spin" />
+                  ) : null}
+                </div>
+
+                {searchingGames && (
+                  <p className="text-[11px] text-zinc-500 flex items-center gap-1.5 animate-pulse">
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-ping" />
+                    Searching game titles across the web...
+                  </p>
+                )}
+              </div>
+
+              {/* 2. Selected games container */}
+              {selectedGames.length > 0 && (
+                <div className="bg-[#18181c]/60 border border-purple-500/15 rounded-xl p-3 space-y-1.5">
+                  <span className="text-[10px] font-bold text-purple-400 tracking-wider uppercase font-mono">
+                    YOUR SELECTIONS ({selectedGames.length})
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedGames.map(game => (
+                      <span
+                        key={game}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#5003BD]/20 text-purple-300 text-xs border border-[#5003BD]/40 font-semibold"
+                      >
+                        <span>{game}</span>
+                        <button
+                          type="button"
+                          onClick={() => toggleGame(game)}
+                          className="hover:text-white hover:bg-white/10 rounded-full p-0.5 shrink-0"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 3. Suggestions List */}
+              <div className="space-y-2">
+                <span className="text-[10px] font-bold text-[#888888] tracking-wider uppercase font-mono">
+                  {gameSearchQuery ? 'SEARCH RESULTS' : 'POPULAR INITIAL GAMES'}
+                </span>
+
+                <div className="flex flex-wrap gap-2 max-h-[190px] overflow-y-auto pr-1 hide-scrollbar">
+                  {/* Custom option if user query isn't directly in suggestions */}
+                  {gameSearchQuery && !gameSuggestions.includes(gameSearchQuery) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        toggleGame(gameSearchQuery);
+                        setGameSearchQuery('');
+                      }}
+                      className="px-3.5 py-2 rounded-full border border-dashed border-[#5003BD]/50 bg-[#121214] text-purple-400 hover:text-white hover:bg-[#5003BD]/20 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>+ Add Custom: "{gameSearchQuery}"</span>
+                    </button>
+                  )}
+
+                  {(gameSearchQuery ? gameSuggestions : GAMES).map(game => {
+                    const isSelected = selectedGames.includes(game);
+                    return (
+                      <button
+                        key={game}
+                        type="button"
+                        onClick={() => toggleGame(game)}
+                        className={`px-3.5 py-2 rounded-full border text-xs transition-all duration-150 flex items-center gap-1.5 cursor-pointer ${
+                          isSelected 
+                            ? 'border-[#5003BD] bg-[#5003BD] text-white font-bold shadow-[0_0_10px_rgba(80,3,189,0.3)]' 
+                            : 'border-[#2a2a2e] bg-[#121214] text-[#aaaaaa] hover:bg-[#1e1e22] hover:border-[#44444c] hover:text-white'
+                        }`}
+                      >
+                        {isSelected && <Check className="w-3 h-3 text-white" />}
+                        {game}
+                      </button>
+                    );
+                  })}
+
+                  {gameSearchQuery && gameSuggestions.length === 0 && !searchingGames && (
+                    <div className="w-full py-4 text-center text-xs text-zinc-500">
+                      No matching games found online. You can add it as a custom game above!
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}

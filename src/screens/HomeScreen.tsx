@@ -143,7 +143,7 @@ export const HomeScreen: React.FC = () => {
   return (
     <div className={`min-h-screen w-full bg-[#121212] text-white flex flex-col items-center ${isChatActive ? 'pb-0' : 'pb-24'}`}>
       {/* Premium Top Navigation */}
-      {(!isChatActive && activeTab !== 'profile') && (
+      {(!isChatActive && activeTab !== 'profile' && activeTab !== 'settings') && (
         <header className="w-full bg-[#121212]/80 backdrop-blur-xl border-b border-[#2a2a2e] px-4 py-3 flex items-center justify-between sticky top-0 z-50">
           <div className="flex items-center gap-3">
             {!logoError ? (
@@ -190,7 +190,7 @@ export const HomeScreen: React.FC = () => {
       )}
 
       {/* Main Content Area */}
-      <main className={`flex-1 w-full flex flex-col ${isChatActive ? 'p-0 gap-0 max-w-none' : activeTab === 'profile' ? 'p-0 gap-0 max-w-none' : 'max-w-4xl px-4 pt-3 pb-6 gap-4'}`}>
+      <main className={`flex-1 w-full flex flex-col ${isChatActive ? 'p-0 gap-0 max-w-none' : (activeTab === 'profile' || activeTab === 'settings') ? 'p-0 gap-0 max-w-none' : 'max-w-4xl px-4 pt-3 pb-6 gap-4'}`}>
         
         {activeTab === 'home' && (
           <>

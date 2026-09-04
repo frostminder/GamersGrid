@@ -140,10 +140,28 @@ export const GAME_DETAILS_MAP: Record<string, GameMetadata> = {
     coverImage: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&q=80&w=800',
     publisher: 'Psyonix',
     colorAccent: 'from-cyan-600/30 to-zinc-950'
+  },
+  'Blood Strike': {
+    name: 'Blood Strike',
+    genre: 'Sleek Roguelike Battle Royale / FPS',
+    tag: 'Battle Royale',
+    coverImage: '',
+    publisher: 'NetEase Games',
+    colorAccent: 'from-red-600/30 to-zinc-950'
+  },
+  'Free Fire': {
+    name: 'Free Fire',
+    genre: 'Fast-Paced Mobile Battle Royale',
+    tag: 'Battle Royale',
+    coverImage: '',
+    publisher: 'Garena',
+    colorAccent: 'from-orange-500/30 to-zinc-950'
   }
 };
 
 export const AVAILABLE_GAMES = [
+  'Blood Strike',
+  'Free Fire',
   'Call of Duty: Warzone',
   'EA FC 25',
   'Valorant',
