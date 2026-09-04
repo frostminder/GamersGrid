@@ -11,6 +11,8 @@ import {
   setDoc, 
   addDoc, 
   updateDoc,
+  writeBatch,
+  arrayUnion,
   getDoc,
   getDocs,
   query, 
@@ -41,6 +43,7 @@ interface ChatMessage {
   readAt?: any;
   delivered?: boolean;
   isDeleted?: boolean;
+  deletedFor?: string[];
   replyTo?: {
     id: string;
     text: string;
@@ -94,19 +97,81 @@ export interface MessagesScreenProps {
   onChatActiveChange?: (active: boolean) => void;
 }
 
-// Swipeable message row supporting swipe-right to reply, desktop hover actions, and deleted message states
+// Authentic WhatsApp Checkmark Tick (Tightly interleaved double tick or single tick)
+export const WhatsAppTick: React.FC<{ 
+  status: 'sent' | 'delivered' | 'read';
+  className?: string;
+}> = ({ status, className = '' }) => {
+  if (status === 'sent') {
+    return (
+      <svg 
+        viewBox="0 0 16 15" 
+        width="15" 
+        height="13" 
+        className={`inline-block shrink-0 text-zinc-400 ${className}`} 
+        fill="none"
+        aria-label="Sent"
+      >
+        <path 
+          d="M12.2 4.2L6.8 10.2L4.2 7.6" 
+          stroke="currentColor" 
+          strokeWidth="1.8" 
+          strokeLinecap="round" 
+          strokeLinejoin="round" 
+        />
+      </svg>
+    );
+  }
+
+  const isRead = status === 'read';
+  const colorClass = isRead ? 'text-[#53bdeb]' : 'text-zinc-400';
+
+  return (
+    <svg 
+      viewBox="0 0 18 15" 
+      width="17" 
+      height="13" 
+      className={`inline-block shrink-0 ${colorClass} ${className}`} 
+      fill="none"
+      aria-label={isRead ? 'Read' : 'Delivered'}
+    >
+      {/* Left Checkmark */}
+      <path 
+        d="M9.8 4.2L5.2 10.2L2.6 7.6" 
+        stroke="currentColor" 
+        strokeWidth="1.8" 
+        strokeLinecap="round" 
+        strokeLinejoin="round" 
+      />
+      {/* Right Checkmark - 3.8px tight parallel offset */}
+      <path 
+        d="M13.6 4.2L9 10.2L7.5 8.7" 
+        stroke="currentColor" 
+        strokeWidth="1.8" 
+        strokeLinecap="round" 
+        strokeLinejoin="round" 
+      />
+    </svg>
+  );
+};
+
+// Swipeable & Long-Press Selectable Message Row
 interface SwipeableMessageRowProps {
   msg: ChatMessage;
+  isSelected: boolean;
+  isSelectionMode: boolean;
+  onToggleSelect: (msg: ChatMessage) => void;
   onReply: (msg: ChatMessage) => void;
-  onDeletePrompt: (msg: ChatMessage) => void;
   renderTicks: (msg: ChatMessage) => React.ReactNode;
   formatTime: (time: any) => string;
 }
 
 const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
   msg,
+  isSelected,
+  isSelectionMode,
+  onToggleSelect,
   onReply,
-  onDeletePrompt,
   renderTicks,
   formatTime,
 }) => {
@@ -115,25 +180,52 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
   const touchStartX = useRef(0);
   const touchStartY = useRef(0);
   const isHorizontalSwipe = useRef<boolean | null>(null);
-  const hasVibrated = useRef(false);
+  const longPressTimer = useRef<any>(null);
+  const hasMoved = useRef(false);
+  const isLongPressed = useRef(false);
+
+  const clearTimer = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
 
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (msg.isDeleted) return;
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
     isHorizontalSwipe.current = null;
-    hasVibrated.current = false;
+    hasMoved.current = false;
+    isLongPressed.current = false;
+    clearTimer();
+
+    // Start long-press detection if not already in selection mode
+    if (!isSelectionMode) {
+      longPressTimer.current = setTimeout(() => {
+        isLongPressed.current = true;
+        try {
+          navigator.vibrate?.(45);
+        } catch {}
+        onToggleSelect(msg);
+      }, 420);
+    }
     setIsSwiping(true);
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (msg.isDeleted || !isSwiping) return;
     const currentX = e.touches[0].clientX;
     const currentY = e.touches[0].clientY;
     const diffX = currentX - touchStartX.current;
     const diffY = currentY - touchStartY.current;
 
-    // Detect horizontal swipe intention
+    if (Math.hypot(diffX, diffY) > 8) {
+      hasMoved.current = true;
+      clearTimer();
+    }
+
+    if (isSelectionMode || msg.isDeleted || !isSwiping) return;
+
+    // Detect horizontal swipe intention for swipe-to-reply
     if (isHorizontalSwipe.current === null) {
       if (Math.abs(diffX) > 6 || Math.abs(diffY) > 6) {
         isHorizontalSwipe.current = diffX > 0 && Math.abs(diffX) > Math.abs(diffY);
@@ -142,17 +234,12 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
 
     if (isHorizontalSwipe.current) {
       if (diffX > 0) {
-        // Damped right swipe up to 65px
         const clamped = Math.min(diffX * 0.55, 65);
         setOffsetX(clamped);
-
-        if (clamped >= 38 && !hasVibrated.current) {
-          hasVibrated.current = true;
+        if (clamped >= 38) {
           try {
             navigator.vibrate?.(12);
-          } catch {
-            // Ignore vibration error
-          }
+          } catch {}
         }
       } else {
         setOffsetX(0);
@@ -160,25 +247,82 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
     }
   };
 
-  const handleTouchEnd = () => {
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    clearTimer();
+    setIsSwiping(false);
+    isHorizontalSwipe.current = null;
+
+    if (isLongPressed.current) {
+      e.preventDefault();
+      setOffsetX(0);
+      return;
+    }
+
+    if (isSelectionMode) {
+      if (!hasMoved.current) {
+        e.preventDefault();
+        onToggleSelect(msg);
+      }
+      setOffsetX(0);
+      return;
+    }
+
     if (offsetX >= 38 && !msg.isDeleted) {
       onReply(msg);
     }
     setOffsetX(0);
-    setIsSwiping(false);
-    isHorizontalSwipe.current = null;
-    hasVibrated.current = false;
+  };
+
+  // Desktop mouse interactions
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    clearTimer();
+    hasMoved.current = false;
+    isLongPressed.current = false;
+
+    if (!isSelectionMode) {
+      longPressTimer.current = setTimeout(() => {
+        isLongPressed.current = true;
+        onToggleSelect(msg);
+      }, 450);
+    }
+  };
+
+  const handleMouseUp = () => {
+    clearTimer();
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    if (isLongPressed.current) {
+      e.preventDefault();
+      return;
+    }
+    if (isSelectionMode) {
+      e.preventDefault();
+      onToggleSelect(msg);
+    }
+  };
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    onToggleSelect(msg);
   };
 
   return (
     <div 
-      className={`relative w-full flex flex-col ${msg.isMe ? 'items-end' : 'items-start'} group select-none`}
+      className={`relative w-full flex flex-col ${msg.isMe ? 'items-end' : 'items-start'} group select-none transition-colors duration-150 py-1 ${
+        isSelected ? 'bg-[#5003BD]/15 rounded-xl' : ''
+      }`}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       onTouchCancel={handleTouchEnd}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onClick={handleClick}
+      onContextMenu={handleContextMenu}
     >
-      {/* Swipe Reply indicator icon on the left (pops up when swiping right) */}
+      {/* Swipe Reply indicator on the left */}
       <div 
         className="absolute left-1 top-1/2 -translate-y-1/2 pointer-events-none transition-transform z-10 flex items-center justify-center"
         style={{
@@ -199,38 +343,44 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
         </span>
       )}
 
-      <div className="relative flex items-center gap-1.5 max-w-[85%] sm:max-w-[70%]">
-        {/* Quick action buttons on hover / touch */}
-        {!msg.isDeleted && (
+      <div className="relative flex items-center gap-2 max-w-[85%] sm:max-w-[70%]">
+        {/* Selection checkbox indicator when in selection mode */}
+        {isSelectionMode && (
+          <div className={`shrink-0 flex items-center justify-center w-5 h-5 rounded-full border transition-all cursor-pointer ${
+            isSelected 
+              ? 'bg-[#5003BD] border-[#a855f7] text-white shadow-md shadow-[#5003BD]/40' 
+              : 'border-zinc-600 bg-black/40 hover:border-zinc-400'
+          } ${msg.isMe ? 'order-first' : 'order-first'}`}>
+            {isSelected && <Check className="w-3.5 h-3.5" strokeWidth={3} />}
+          </div>
+        )}
+
+        {/* Quick action button on hover for desktop (when not in selection mode) */}
+        {!isSelectionMode && !msg.isDeleted && (
           <div className={`opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0 ${msg.isMe ? 'order-first' : 'order-last'}`}>
             <button
               type="button"
-              onClick={() => onReply(msg)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onReply(msg);
+              }}
               className="p-1.5 rounded-lg bg-[#27272a]/90 hover:bg-[#3f3f46] text-zinc-400 hover:text-white transition-colors cursor-pointer"
               title="Reply"
             >
               <Reply className="w-3.5 h-3.5" />
             </button>
-            {msg.isMe && (
-              <button
-                type="button"
-                onClick={() => onDeletePrompt(msg)}
-                className="p-1.5 rounded-lg bg-[#27272a]/90 hover:bg-red-950/60 text-zinc-400 hover:text-red-400 transition-colors cursor-pointer"
-                title="Delete for everyone"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            )}
           </div>
         )}
 
-        {/* Message Bubble with dynamic translation */}
+        {/* Message Bubble with dynamic translation and selected ring */}
         <div 
           style={{
             transform: `translateX(${offsetX}px)`,
             transition: isSwiping ? 'none' : 'transform 0.2s cubic-bezier(0.2, 0, 0, 1)',
           }}
-          className={`relative px-3.5 py-2 rounded-2xl text-sm leading-relaxed ${
+          className={`relative px-3.5 py-2 rounded-2xl text-sm leading-relaxed cursor-pointer transition-all ${
+            isSelected ? 'ring-2 ring-[#a855f7] ring-offset-2 ring-offset-[#121212]' : ''
+          } ${
             msg.isDeleted
               ? 'bg-[#1a1a20]/80 border border-zinc-800/80 text-zinc-400 rounded-bl-xs'
               : msg.isMe 
@@ -238,7 +388,7 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
                 : 'bg-[#27272a] text-[#f4f4f5] rounded-bl-xs border border-[#3f3f46]/50'
           }`}
         >
-          {/* Quoted reply preview (WhatsApp-style card with vertical accent bar) */}
+          {/* Quoted reply preview */}
           {!msg.isDeleted && msg.replyTo && (
             <div className="mb-2 p-2 rounded-lg bg-black/25 border-l-3 border-[#a855f7] text-left">
               <div className="text-[11px] font-bold text-[#a855f7] truncate">
@@ -297,9 +447,10 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Swipe to reply and Message delete state
+  // Swipe to reply and Message selection/delete state
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
-  const [messageToDelete, setMessageToDelete] = useState<ChatMessage | null>(null);
+  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
   // Notify parent of active chat status so header/bottom-nav can hide
@@ -437,6 +588,12 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
         snapshot.forEach((docSnap) => {
           const data = docSnap.data();
           const isFromPartner = data.senderId !== currentUser?.uid;
+          const deletedFor: string[] = Array.isArray(data.deletedFor) ? data.deletedFor : [];
+
+          // If current user deleted this message for themselves, hide it
+          if (currentUser && deletedFor.includes(currentUser.uid)) {
+            return;
+          }
           
           // Mark incoming message as read when in active chat
           if (isFromPartner && !data.read) {
@@ -459,6 +616,7 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
             readAt: data.readAt,
             delivered: data.delivered ?? false,
             isDeleted: data.isDeleted ?? false,
+            deletedFor: deletedFor,
             replyTo: data.replyTo ?? null,
           });
         });
@@ -488,6 +646,11 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
         const msgs: ChatMessage[] = [];
         snapshot.forEach((docSnap) => {
           const data = docSnap.data();
+          const deletedFor: string[] = Array.isArray(data.deletedFor) ? data.deletedFor : [];
+          if (currentUser && deletedFor.includes(currentUser.uid)) {
+            return;
+          }
+
           msgs.push({
             id: docSnap.id,
             senderId: data.senderId,
@@ -500,6 +663,7 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
             readAt: data.readAt,
             delivered: data.delivered ?? false,
             isDeleted: data.isDeleted ?? false,
+            deletedFor: deletedFor,
             replyTo: data.replyTo ?? null,
           });
         });
@@ -514,6 +678,11 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
         const msgs: ChatMessage[] = [];
         snapshot.forEach((docSnap) => {
           const data = docSnap.data();
+          const deletedFor: string[] = Array.isArray(data.deletedFor) ? data.deletedFor : [];
+          if (currentUser && deletedFor.includes(currentUser.uid)) {
+            return;
+          }
+
           msgs.push({
             id: docSnap.id,
             senderId: data.senderId,
@@ -526,6 +695,7 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
             readAt: data.readAt,
             delivered: data.delivered ?? false,
             isDeleted: data.isDeleted ?? false,
+            deletedFor: deletedFor,
             replyTo: data.replyTo ?? null,
           });
         });
@@ -642,6 +812,9 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
     setActiveGroup(null);
     setActiveCommunity(null);
     setPartnerTyping(false);
+    setSelectedMessageIds(new Set());
+    setShowDeleteModal(false);
+    setReplyingTo(null);
     onChatActiveChange?.(false);
   };
 
@@ -654,12 +827,7 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
 
     // 1. Blue double check: Message has been read
     if (msg.read) {
-      return (
-        <span className="inline-flex items-center -space-x-1.5 text-[#53bdeb]" title="Read">
-          <Check className="w-3.5 h-3.5" strokeWidth={2.5} />
-          <Check className="w-3.5 h-3.5" strokeWidth={2.5} />
-        </span>
-      );
+      return <WhatsAppTick status="read" />;
     }
 
     // 2. Double check (grey): Recipient is online or in standby (background), or message marked delivered
@@ -667,67 +835,132 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
     const isOnlineOrStandby = msg.delivered || partnerStatus === 'online' || partnerStatus === 'background';
 
     if (isOnlineOrStandby) {
-      return (
-        <span className="inline-flex items-center -space-x-1.5 text-zinc-400" title="Delivered">
-          <Check className="w-3.5 h-3.5" strokeWidth={2.5} />
-          <Check className="w-3.5 h-3.5" strokeWidth={2.5} />
-        </span>
-      );
+      return <WhatsAppTick status="delivered" />;
     }
 
-    // 3. Single check (grey): Sent, but recipient is offline (app closed / not running)
-    return (
-      <Check 
-        className="w-3.5 h-3.5 text-zinc-400 shrink-0 inline-block" 
-        strokeWidth={2.5} 
-        title="Sent"
-      />
-    );
+    // 3. Single check (grey): Sent, but recipient is offline
+    return <WhatsAppTick status="sent" />;
   };
 
-  // Delete message for everyone
-  const handleDeleteMessage = async () => {
-    if (!messageToDelete || !currentUser || isDeleting) return;
+  // Toggle selection for a message (supports multi-select)
+  const toggleSelectMessage = (msg: ChatMessage) => {
+    setSelectedMessageIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(msg.id)) {
+        next.delete(msg.id);
+      } else {
+        next.add(msg.id);
+      }
+      return next;
+    });
+  };
+
+  // Delete selected messages for everyone (updates status to 'This message was deleted')
+  const handleDeleteForEveryone = async () => {
+    if (selectedMessageIds.size === 0 || !currentUser || isDeleting) return;
     setIsDeleting(true);
 
     try {
-      const targetId = messageToDelete.id;
-      if (activeChatId) {
-        await updateDoc(doc(db, 'chats', activeChatId, 'messages', targetId), {
-          isDeleted: true,
-          text: 'This message was deleted',
-          deletedAt: serverTimestamp(),
-          replyTo: null,
-        });
+      const batch = writeBatch(db);
+      const targetIds: string[] = Array.from(selectedMessageIds);
+      const chatId = activeChatId;
+      const groupId = activeGroup?.id;
+      const communityId = activeCommunity?.id;
 
-        // Update chat doc's lastMessage preview if this was the last message
-        const currentChat = chats.find(c => c.id === activeChatId);
-        if (currentChat?.lastMessage === messageToDelete.text) {
-          await setDoc(doc(db, 'chats', activeChatId), {
+      targetIds.forEach((id: string) => {
+        let msgRef;
+        if (chatId) {
+          msgRef = doc(db, 'chats', chatId, 'messages', id);
+        } else if (groupId) {
+          msgRef = doc(db, 'groups', groupId, 'messages', id);
+        } else if (communityId) {
+          msgRef = doc(db, 'communities', communityId, 'messages', id);
+        }
+        if (msgRef) {
+          batch.update(msgRef, {
+            isDeleted: true,
+            text: 'This message was deleted',
+            deletedAt: serverTimestamp(),
+            replyTo: null,
+          });
+        }
+      });
+
+      await batch.commit();
+
+      // Instant local state update
+      setCurrentMessages((prev) =>
+        prev.map((m) => {
+          if (selectedMessageIds.has(m.id)) {
+            return {
+              ...m,
+              isDeleted: true,
+              text: 'This message was deleted',
+              replyTo: null,
+            };
+          }
+          return m;
+        })
+      );
+
+      // Update chat doc's preview if any affected message matched lastMessage
+      if (activeChatId) {
+        await setDoc(
+          doc(db, 'chats', activeChatId),
+          {
             lastMessage: 'This message was deleted',
             updatedAt: serverTimestamp(),
-          }, { merge: true });
-        }
-      } else if (activeGroup) {
-        await updateDoc(doc(db, 'groups', activeGroup.id, 'messages', targetId), {
-          isDeleted: true,
-          text: 'This message was deleted',
-          deletedAt: serverTimestamp(),
-          replyTo: null,
-        });
-      } else if (activeCommunity) {
-        await updateDoc(doc(db, 'communities', activeCommunity.id, 'messages', targetId), {
-          isDeleted: true,
-          text: 'This message was deleted',
-          deletedAt: serverTimestamp(),
-          replyTo: null,
-        });
+          },
+          { merge: true }
+        );
       }
     } catch (err) {
-      console.error('Error deleting message:', err);
+      console.error('Error deleting messages for everyone:', err);
     } finally {
       setIsDeleting(false);
-      setMessageToDelete(null);
+      setShowDeleteModal(false);
+      setSelectedMessageIds(new Set());
+    }
+  };
+
+  // Delete selected messages for myself only (completely hides/removes for current user)
+  const handleDeleteForMe = async () => {
+    if (selectedMessageIds.size === 0 || !currentUser || isDeleting) return;
+    setIsDeleting(true);
+
+    try {
+      const batch = writeBatch(db);
+      const targetIds: string[] = Array.from(selectedMessageIds);
+      const chatId = activeChatId;
+      const groupId = activeGroup?.id;
+      const communityId = activeCommunity?.id;
+
+      targetIds.forEach((id: string) => {
+        let msgRef;
+        if (chatId) {
+          msgRef = doc(db, 'chats', chatId, 'messages', id);
+        } else if (groupId) {
+          msgRef = doc(db, 'groups', groupId, 'messages', id);
+        } else if (communityId) {
+          msgRef = doc(db, 'communities', communityId, 'messages', id);
+        }
+        if (msgRef) {
+          batch.update(msgRef, {
+            deletedFor: arrayUnion(currentUser.uid),
+          });
+        }
+      });
+
+      await batch.commit();
+
+      // Instant local state update: remove them from current view completely
+      setCurrentMessages((prev) => prev.filter((m) => !selectedMessageIds.has(m.id)));
+    } catch (err) {
+      console.error('Error deleting messages for me:', err);
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteModal(false);
+      setSelectedMessageIds(new Set());
     }
   };
 
@@ -954,65 +1187,117 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
 
     return (
       <div className="fixed inset-0 z-[60] flex flex-col bg-[#121212] w-screen h-[100dvh] overflow-hidden animate-in fade-in duration-150">
-        {/* Chat Header (Edge to edge, full width) */}
-        <div className="px-4 py-3 bg-[#18181b] border-b border-[#2a2a2e] flex items-center justify-between shrink-0 shadow-md">
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={handleBackToHub}
-              className="p-2 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-white transition-colors cursor-pointer"
-              title="Back to messages"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-
-            {/* Avatar with presence */}
-            <div className="relative">
-              {activeChatGamer ? (
-                <div className="w-10 h-10 rounded-full bg-[#27272a] border border-[#3f3f46] overflow-hidden">
-                  {activeChatGamer.photoURL ? (
-                    <img src={activeChatGamer.photoURL} alt={title} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center font-bold text-white bg-[#5003BD]/40 text-sm">
-                      {(activeChatGamer.gamertag?.[0] || 'G').toUpperCase()}
-                    </div>
-                  )}
-                </div>
-              ) : activeGroup ? (
-                <div className="w-10 h-10 rounded-xl bg-[#27272a] border border-[#3f3f46] overflow-hidden">
-                  <img src={activeGroup.avatar} alt={activeGroup.name} className="w-full h-full object-cover" />
-                </div>
-              ) : (
-                <div className="w-10 h-10 rounded-xl bg-[#5003BD]/20 border border-[#5003BD]/40 flex items-center justify-center text-xl">
-                  {activeCommunity?.icon || '🎮'}
-                </div>
-              )}
-
-              {/* Status dot on avatar bottom right if direct chat */}
-              {activeChatGamer && statusConfig && (
-                <span 
-                  className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-[#18181b] ${statusConfig.bg} ${statusConfig.glow}`}
-                  title={statusConfig.label}
-                />
-              )}
+        {/* Chat Header (Switches to Selection Bar when messages are selected) */}
+        {selectedMessageIds.size > 0 ? (
+          <div className="px-4 py-3 bg-[#1e1533] border-b border-[#5003BD]/40 flex items-center justify-between shrink-0 shadow-lg animate-in slide-in-from-top-2 duration-150">
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={() => setSelectedMessageIds(new Set())}
+                className="p-2 rounded-xl bg-black/40 hover:bg-black/60 text-white transition-colors cursor-pointer"
+                title="Cancel selection"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-white text-base leading-none">
+                  {selectedMessageIds.size}
+                </span>
+                <span className="text-xs text-purple-200">selected</span>
+              </div>
             </div>
 
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-bold text-white text-sm sm:text-base leading-none">{title}</h3>
-                {/* Status dot beside name as requested */}
+            <div className="flex items-center gap-2">
+              {/* If single message selected and not deleted, offer quick reply */}
+              {selectedMessageIds.size === 1 && (() => {
+                const singleId = Array.from(selectedMessageIds)[0];
+                const singleMsg = currentMessages.find(m => m.id === singleId);
+                if (singleMsg && !singleMsg.isDeleted) {
+                  return (
+                    <button
+                      onClick={() => {
+                        setReplyingTo(singleMsg);
+                        setSelectedMessageIds(new Set());
+                      }}
+                      className="p-2 rounded-xl bg-black/30 hover:bg-black/50 text-purple-200 hover:text-white transition-colors cursor-pointer"
+                      title="Reply"
+                    >
+                      <Reply className="w-5 h-5" />
+                    </button>
+                  );
+                }
+                return null;
+              })()}
+
+              {/* Dustbin / Trash icon at top as requested */}
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="p-2 rounded-xl bg-red-600/90 hover:bg-red-600 text-white transition-all shadow-md shadow-red-600/30 cursor-pointer flex items-center gap-1.5"
+                title="Delete selected messages"
+              >
+                <Trash2 className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="px-4 py-3 bg-[#18181b] border-b border-[#2a2a2e] flex items-center justify-between shrink-0 shadow-md">
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={handleBackToHub}
+                className="p-2 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-white transition-colors cursor-pointer"
+                title="Back to messages"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+
+              {/* Avatar with presence */}
+              <div className="relative">
+                {activeChatGamer ? (
+                  <div className="w-10 h-10 rounded-full bg-[#27272a] border border-[#3f3f46] overflow-hidden">
+                    {activeChatGamer.photoURL ? (
+                      <img src={activeChatGamer.photoURL} alt={title} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center font-bold text-white bg-[#5003BD]/40 text-sm">
+                        {(activeChatGamer.gamertag?.[0] || 'G').toUpperCase()}
+                      </div>
+                    )}
+                  </div>
+                ) : activeGroup ? (
+                  <div className="w-10 h-10 rounded-xl bg-[#27272a] border border-[#3f3f46] overflow-hidden">
+                    <img src={activeGroup.avatar} alt={activeGroup.name} className="w-full h-full object-cover" />
+                  </div>
+                ) : (
+                  <div className="w-10 h-10 rounded-xl bg-[#5003BD]/20 border border-[#5003BD]/40 flex items-center justify-center text-xl">
+                    {activeCommunity?.icon || '🎮'}
+                  </div>
+                )}
+
+                {/* Status dot on avatar bottom right if direct chat */}
                 {activeChatGamer && statusConfig && (
                   <span 
-                    className={`w-2 h-2 rounded-full ${statusConfig.bg} ${statusConfig.glow} inline-block shrink-0`}
+                    className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-[#18181b] ${statusConfig.bg} ${statusConfig.glow}`}
                     title={statusConfig.label}
                   />
                 )}
               </div>
-              <div className="flex items-center gap-1.5 mt-1 text-xs text-[#71717a]">
-                <span className="truncate max-w-[200px] sm:max-w-xs">{subtitle}</span>
+
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-white text-sm sm:text-base leading-none">{title}</h3>
+                  {/* Status dot beside name */}
+                  {activeChatGamer && statusConfig && (
+                    <span 
+                      className={`w-2 h-2 rounded-full ${statusConfig.bg} ${statusConfig.glow} inline-block shrink-0`}
+                      title={statusConfig.label}
+                    />
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 mt-1 text-xs text-[#71717a]">
+                  <span className="truncate max-w-[200px] sm:max-w-xs">{subtitle}</span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Messages Stream */}
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3.5 hide-scrollbar bg-[#121212]">
@@ -1027,11 +1312,11 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
               <SwipeableMessageRow
                 key={msg.id}
                 msg={msg}
+                isSelected={selectedMessageIds.has(msg.id)}
+                isSelectionMode={selectedMessageIds.size > 0}
+                onToggleSelect={toggleSelectMessage}
                 onReply={(targetMsg) => {
                   setReplyingTo(targetMsg);
-                }}
-                onDeletePrompt={(targetMsg) => {
-                  setMessageToDelete(targetMsg);
                 }}
                 renderTicks={renderMessageTicks}
                 formatTime={formatTime}
@@ -1104,45 +1389,72 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
           </button>
         </form>
 
-        {/* Delete Message Confirmation Modal */}
-        {messageToDelete && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
-            <div className="w-full max-w-sm bg-[#18181b] border border-[#2a2a2e] rounded-2xl p-5 shadow-2xl space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-400 shrink-0">
-                  <Trash2 className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="text-white font-bold text-base leading-tight">Delete message?</h4>
-                  <p className="text-xs text-[#a1a1aa] mt-0.5">This message will be deleted for everyone in this chat.</p>
-                </div>
-              </div>
+        {/* Delete Messages Modal with Granular Options */}
+        {showDeleteModal && selectedMessageIds.size > 0 && (() => {
+          const selectedList = currentMessages.filter((m) => selectedMessageIds.has(m.id));
+          const hasOthersMessages = selectedList.some((m) => !m.isMe);
+          const allOwnMessages = selectedList.every((m) => m.isMe);
 
-              <div className="bg-[#121212] p-3 rounded-xl border border-[#27272a] text-xs text-zinc-300 italic truncate">
-                "{messageToDelete.text}"
-              </div>
+          return (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
+              <div className="w-full max-w-sm bg-[#18181b] border border-[#2a2a2e] rounded-2xl p-5 shadow-2xl space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-400 shrink-0">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-white font-bold text-base leading-tight">
+                      Delete {selectedMessageIds.size === 1 ? 'message' : `${selectedMessageIds.size} messages`}?
+                    </h4>
+                    <p className="text-xs text-[#a1a1aa] mt-0.5">
+                      {hasOthersMessages
+                        ? 'Selected messages from other users will only be deleted for you.'
+                        : 'Choose whether to delete for everyone or just for yourself.'}
+                    </p>
+                  </div>
+                </div>
 
-              <div className="flex items-center justify-end gap-2.5 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setMessageToDelete(null)}
-                  disabled={isDeleting}
-                  className="px-4 py-2 rounded-xl text-sm font-medium text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDeleteMessage}
-                  disabled={isDeleting}
-                  className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 transition-colors shadow-lg shadow-red-600/30 cursor-pointer flex items-center gap-1.5"
-                >
-                  {isDeleting ? 'Deleting...' : 'Delete for everyone'}
-                </button>
+                <div className="flex flex-col gap-2 pt-2">
+                  {/* Option: Delete for everyone (Available when all selected messages were sent by you) */}
+                  {allOwnMessages && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteForEveryone}
+                      disabled={isDeleting}
+                      className="w-full py-2.5 px-4 rounded-xl text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 transition-colors shadow-lg shadow-red-600/30 cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      {isDeleting ? 'Deleting...' : 'Delete for everyone'}
+                    </button>
+                  )}
+
+                  {/* Option: Delete for me */}
+                  <button
+                    type="button"
+                    onClick={handleDeleteForMe}
+                    disabled={isDeleting}
+                    className={`w-full py-2.5 px-4 rounded-xl text-sm font-semibold transition-colors cursor-pointer flex items-center justify-center gap-2 ${
+                      allOwnMessages 
+                        ? 'bg-[#27272a] hover:bg-[#3f3f46] text-white' 
+                        : 'bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/30'
+                    }`}
+                  >
+                    {isDeleting ? 'Deleting...' : 'Delete for me'}
+                  </button>
+
+                  {/* Option: Cancel */}
+                  <button
+                    type="button"
+                    onClick={() => setShowDeleteModal(false)}
+                    disabled={isDeleting}
+                    className="w-full py-2 rounded-xl text-sm font-medium text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     );
   }
