@@ -309,16 +309,14 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
     isHorizontalSwipe.current = null;
 
     if (isLongPressed.current) {
+      // If long press was triggered, prevent click/ghost events
       e.preventDefault();
       setOffsetX(0);
       return;
     }
 
     if (isSelectionMode) {
-      if (!hasMoved.current) {
-        e.preventDefault();
-        onToggleSelect(msg);
-      }
+      // Let the subsequent native 'click' event handle the selection toggle
       setOffsetX(0);
       return;
     }
@@ -342,7 +340,7 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
       longPressTimer.current = setTimeout(() => {
         isLongPressed.current = true;
         onToggleSelect(msg);
-      }, 450);
+      }, 420); // slightly faster than native context menu
     }
   };
 
@@ -368,6 +366,10 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
       return;
     }
     e.preventDefault();
+    clearTimer(); // Prevent custom timer if native contextmenu fires first
+    if (isLongPressed.current) return; // Prevent double toggle if custom timer already fired
+    
+    isLongPressed.current = true;
     onToggleSelect(msg);
   };
 
