@@ -1,6 +1,6 @@
 {
   "name": "Gamers Grid",
   "description": "Worldwide dark-themed social platform for gamers with short-form video feeds, tournaments, OCR room verification, and esports community economy.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["microphone", "camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

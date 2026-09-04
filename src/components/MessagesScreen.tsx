@@ -2,7 +2,9 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   MessageSquare, Users, Globe, Search, Plus, Send, X, 
   Check, ArrowLeft, UserCheck, ChevronRight, Hash, 
-  UserPlus, Reply, Trash2, Ban, Pencil, Copy
+  UserPlus, Reply, Trash2, Ban, Pencil, Copy,
+  Image as ImageIcon, Mic, Square, Paperclip, Smile, Loader2, Play, Square as SquareIcon,
+  MicOff, ExternalLink
 } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
 import { 
@@ -39,6 +41,9 @@ interface ChatMessage {
   senderName: string;
   senderAvatar?: string;
   text: string;
+  imageUrl?: string;
+  audioUrl?: string;
+  gifUrl?: string;
   createdAt: any;
   isMe: boolean;
   read?: boolean;
@@ -96,6 +101,43 @@ interface FirestoreCommunity {
   lastMessageTime?: any;
   createdAt?: any;
 }
+
+export const EMOJI_CATEGORIES = {
+  random: {
+    label: '🎲 Random',
+    emojis: [
+      '🐸', '🎮', '🕹️', '👾', '🏆', '🥇', '🥈', '🥉', '⚔️', '🛡️', 
+      '🎯', '🎲', '🔥', '💀', '👑', '⚡', '💣', '🚀', '🤖', '🦾', 
+      '🎧', '🃏', '🧩', '🎳', '🏹', '🥋', '🥊', '🔫', '🕹', '🎪'
+    ]
+  },
+  reactions: {
+    label: '😀 Smileys & Memes',
+    emojis: [
+      '😂', '🤣', '😭', '💀', '🤡', '🗿', '🥺', '🤯', '🥵', '🥶', 
+      '😎', '🥳', '😈', '👿', '😡', '🤬', '🤩', '😴', '🤐', '🤫', 
+      '🫡', '🤮', '🤢', '🤤', '🫠', '👀', '👁️', '👻', '👽', '💩'
+    ]
+  },
+  gestures: {
+    label: '👍 Gestures',
+    emojis: [
+      '👍', '👎', '👏', '🙌', '🤝', '✌️', '🤞', '👊', '🤛', '🤜', 
+      '🤙', '🤌', '🤏', '✋', '🖐️', '🤘', '🤟', '🙏', '✍️', '💪', 
+      '🖕', '💅', '🤳', '🙋', '🤷'
+    ]
+  },
+  symbols: {
+    label: '❤️ Symbols',
+    emojis: [
+      '❤️', '💜', '🖤', '🤍', '💔', '💖', '💯', '💥', '✨', '🌟', 
+      '💢', '💤', '💫', '💬', '💭', '🚩', '⚠️', '❌', '✅', '⚡', 
+      '🎉', '🎊', '🎁', '🔔', '📢'
+    ]
+  },
+} as const;
+
+export type EmojiCategoryKey = keyof typeof EMOJI_CATEGORIES;
 
 export interface MessagesScreenProps {
   onChatActiveChange?: (active: boolean) => void;
@@ -169,6 +211,7 @@ interface SwipeableMessageRowProps {
   onReply: (msg: ChatMessage) => void;
   onEdit?: (msg: ChatMessage) => void;
   onOpenProfile?: () => void;
+  onImageClick?: (url: string) => void;
   renderTicks: (msg: ChatMessage) => React.ReactNode;
   formatTime: (time: any) => string;
 }
@@ -182,6 +225,7 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
   onReply,
   onEdit,
   onOpenProfile,
+  onImageClick,
   renderTicks,
   formatTime,
 }) => {
@@ -447,9 +491,36 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
               <span>{msg.isMe ? 'You deleted this message' : 'This message was deleted'}</span>
             </div>
           ) : (
-            <p className="message-text-content break-words [overflow-wrap:anywhere] [word-break:break-word] whitespace-pre-wrap select-text text-sm leading-snug">
-              {msg.text}
-            </p>
+            <div className="flex flex-col gap-1">
+              {msg.imageUrl && (
+                <div 
+                  className="rounded-xl overflow-hidden cursor-pointer hover:opacity-95 transition-opacity max-w-full bg-black/25 select-none"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onImageClick?.(msg.imageUrl!);
+                  }}
+                  title="Click to view full image"
+                >
+                  <img 
+                    src={msg.imageUrl} 
+                    alt="Photo" 
+                    className="rounded-xl w-full h-auto max-h-[340px] object-cover" 
+                    loading="lazy"
+                  />
+                </div>
+              )}
+              {msg.gifUrl && (
+                <img src={msg.gifUrl} alt="GIF" className="rounded-lg max-w-full h-auto max-h-[200px] object-contain" />
+              )}
+              {msg.audioUrl && (
+                <audio controls src={msg.audioUrl} className="max-w-[220px] h-9" />
+              )}
+              {msg.text && (
+                <p className="message-text-content break-words [overflow-wrap:anywhere] [word-break:break-word] whitespace-pre-wrap select-text text-sm leading-snug px-0.5 pt-0.5">
+                  {msg.text}
+                </p>
+              )}
+            </div>
           )}
 
           {/* Time & authentic WhatsApp ticks & Edited label */}
@@ -519,6 +590,34 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
   const [messageInput, setMessageInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Media & Attachments
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [activeEmojiCategory, setActiveEmojiCategory] = useState<EmojiCategoryKey>('random');
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<BlobPart[]>([]);
+  const recordingTimerRef = useRef<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Microphone Error & Permission Guidance Modal
+  const [micError, setMicError] = useState<{
+    title: string;
+    message: string;
+    isPermissionDenied?: boolean;
+  } | null>(null);
+
+  // WhatsApp-style Image Attachment & Caption
+  const [pendingImage, setPendingImage] = useState<{
+    dataUrl: string;
+    caption: string;
+  } | null>(null);
+  const [isSendingImage, setIsSendingImage] = useState(false);
+
+  // Full-screen Image Lightbox
+  const [viewingFullImage, setViewingFullImage] = useState<string | null>(null);
 
   // Swipe to reply and Message selection/delete state
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
@@ -736,6 +835,9 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
             senderName: data.senderName,
             senderAvatar: data.senderAvatar,
             text: data.text,
+            imageUrl: data.imageUrl || undefined,
+            audioUrl: data.audioUrl || undefined,
+            gifUrl: data.gifUrl || undefined,
             createdAt: data.createdAt,
             isMe: data.senderId === currentUser?.uid,
             read: data.read ?? false,
@@ -785,6 +887,9 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
             senderName: data.senderName,
             senderAvatar: data.senderAvatar,
             text: data.text,
+            imageUrl: data.imageUrl || undefined,
+            audioUrl: data.audioUrl || undefined,
+            gifUrl: data.gifUrl || undefined,
             createdAt: data.createdAt,
             isMe: data.senderId === currentUser?.uid,
             read: data.read ?? false,
@@ -819,6 +924,9 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
             senderName: data.senderName,
             senderAvatar: data.senderAvatar,
             text: data.text,
+            imageUrl: data.imageUrl || undefined,
+            audioUrl: data.audioUrl || undefined,
+            gifUrl: data.gifUrl || undefined,
             createdAt: data.createdAt,
             isMe: data.senderId === currentUser?.uid,
             read: data.read ?? false,
@@ -1256,12 +1364,222 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
     }
   };
 
-  // Send Message in active conversation
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!messageInput.trim() || isSending || !currentUser) return;
+  const compressImage = (dataUrl: string): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 960;
+        const MAX_HEIGHT = 960;
+        let width = img.width;
+        let height = img.height;
 
-    const text = messageInput.trim();
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height = Math.round((height * MAX_WIDTH) / width);
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width = Math.round((width * MAX_HEIGHT) / height);
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(dataUrl);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        // Fast high-quality compression keeping document well below Firestore 1MB
+        const compressed = canvas.toDataURL('image/jpeg', 0.72);
+        resolve(compressed);
+      };
+      img.onerror = () => {
+        resolve(dataUrl);
+      };
+      img.src = dataUrl;
+    });
+  };
+
+  const handleImageFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Clear input so same file can be selected again seamlessly
+    e.target.value = '';
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      if (dataUrl) {
+        // Open WhatsApp-style photo preview modal with prefilled caption if user had typed text
+        setPendingImage({
+          dataUrl,
+          caption: messageInput.trim(),
+        });
+        setMessageInput('');
+        setShowEmojiPicker(false);
+      }
+    };
+  };
+
+  const handleSendPendingImage = async () => {
+    if (!pendingImage || isSendingImage || isSending || !currentUser) return;
+    setIsSendingImage(true);
+    try {
+      const compressed = await compressImage(pendingImage.dataUrl);
+      const caption = pendingImage.caption.trim();
+      await handleSendMessage(undefined, {
+        imageUrl: compressed,
+        text: caption,
+      });
+      setPendingImage(null);
+      setShowEmojiPicker(false);
+    } catch (err) {
+      console.error('Error sending photo:', err);
+      alert('Could not send photo. Please try again.');
+    } finally {
+      setIsSendingImage(false);
+    }
+  };
+
+  const handleSelectEmoji = (emoji: string) => {
+    if (pendingImage) {
+      setPendingImage((prev) => prev ? { ...prev, caption: prev.caption + emoji } : null);
+    } else {
+      setMessageInput((prev) => prev + emoji);
+    }
+  };
+
+  const startRecording = async () => {
+    // Check if navigator.mediaDevices and getUserMedia exist
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setMicError({
+        title: 'Microphone Not Supported',
+        message: 'Your browser or current browsing environment does not support audio recording.',
+        isPermissionDenied: false,
+      });
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // Determine optimal audio mimeType
+      let mimeType = 'audio/webm';
+      if (typeof MediaRecorder !== 'undefined') {
+        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+          mimeType = 'audio/webm;codecs=opus';
+        } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+          mimeType = 'audio/webm';
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          mimeType = 'audio/mp4';
+        } else if (MediaRecorder.isTypeSupported('audio/aac')) {
+          mimeType = 'audio/aac';
+        } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+          mimeType = 'audio/ogg';
+        }
+      }
+
+      let mediaRecorder: MediaRecorder;
+      try {
+        mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      } catch {
+        mediaRecorder = new MediaRecorder(stream);
+      }
+
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType || 'audio/webm' });
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = async () => {
+          const base64Audio = reader.result as string;
+          if (base64Audio) {
+            await handleSendMessage(undefined, { audioUrl: base64Audio });
+          }
+        };
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingDuration(0);
+      setMicError(null);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration(prev => prev + 1);
+      }, 1000);
+    } catch (err: any) {
+      console.error("Error accessing mic:", err);
+      const errName = err?.name || '';
+      const errMsg = (err?.message || '').toLowerCase();
+      const isDenied = 
+        errName === 'NotAllowedError' || 
+        errName === 'PermissionDeniedError' || 
+        errMsg.includes('denied') || 
+        errMsg.includes('permission');
+
+      if (isDenied) {
+        setMicError({
+          title: 'Microphone Permission Blocked',
+          message: 'Microphone access is blocked by the browser. Please allow microphone access in your browser address bar settings to record voice notes.',
+          isPermissionDenied: true,
+        });
+      } else if (errName === 'NotFoundError' || errName === 'DevicesNotFoundError') {
+        setMicError({
+          title: 'No Microphone Found',
+          message: 'No microphone was detected on this device. Please connect a microphone or headset and try again.',
+          isPermissionDenied: false,
+        });
+      } else {
+        setMicError({
+          title: 'Microphone Error',
+          message: err?.message || 'Could not connect to microphone. Please check your browser audio settings.',
+          isPermissionDenied: false,
+        });
+      }
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      clearInterval(recordingTimerRef.current);
+    }
+  };
+
+  const cancelRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      setIsRecording(false);
+      clearInterval(recordingTimerRef.current);
+    }
+  };
+
+  // Send Message in active conversation
+  const handleSendMessage = async (
+    e?: React.FormEvent,
+    mediaPayload?: { imageUrl?: string; gifUrl?: string; audioUrl?: string; text?: string }
+  ) => {
+    if (e) e.preventDefault();
+    
+    const textToSend = mediaPayload?.text !== undefined ? mediaPayload.text : messageInput.trim();
+    if (!textToSend && !mediaPayload?.imageUrl && !mediaPayload?.audioUrl && !mediaPayload?.gifUrl) return;
+    if (isSending || !currentUser) return;
+
     const replyPayload = replyingTo ? {
       id: replyingTo.id,
       text: replyingTo.text,
@@ -1271,6 +1589,30 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
     setMessageInput('');
     setReplyingTo(null);
     setIsSending(true);
+    setShowAttachmentMenu(false);
+    setShowEmojiPicker(false);
+
+    let lastMessageText = textToSend;
+    if (!lastMessageText) {
+      if (mediaPayload?.imageUrl) lastMessageText = '📷 Photo';
+      else if (mediaPayload?.gifUrl) lastMessageText = '🎬 GIF';
+      else if (mediaPayload?.audioUrl) lastMessageText = '🎤 Voice Note';
+    } else if (mediaPayload?.imageUrl) {
+      lastMessageText = `📷 ${textToSend}`;
+    }
+
+    const payloadBase = {
+      senderId: currentUser.uid,
+      senderName: currentUser.displayName || 'Gamer',
+      senderAvatar: currentUser.photoURL || '',
+      text: textToSend,
+      ...(mediaPayload?.imageUrl ? { imageUrl: mediaPayload.imageUrl } : {}),
+      ...(mediaPayload?.gifUrl ? { gifUrl: mediaPayload.gifUrl } : {}),
+      ...(mediaPayload?.audioUrl ? { audioUrl: mediaPayload.audioUrl } : {}),
+      createdAt: serverTimestamp(),
+      isDeleted: false,
+      replyTo: replyPayload,
+    };
 
     try {
       if (activeChatId) {
@@ -1280,19 +1622,13 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
         const partnerId = activeChatGamer?.uid || chats.find(c => c.id === activeChatId)?.participants?.find(p => p !== currentUser.uid);
 
         await addDoc(collection(db, 'chats', activeChatId, 'messages'), {
-          senderId: currentUser.uid,
-          senderName: currentUser.displayName || 'Gamer',
-          senderAvatar: currentUser.photoURL || '',
-          text,
-          createdAt: serverTimestamp(),
+          ...payloadBase,
           read: false,
           delivered: isDelivered,
-          isDeleted: false,
-          replyTo: replyPayload,
         });
 
         await setDoc(doc(db, 'chats', activeChatId), {
-          lastMessage: text,
+          lastMessage: lastMessageText,
           lastMessageSenderId: currentUser.uid,
           lastMessageSenderName: currentUser.displayName || 'Gamer',
           updatedAt: serverTimestamp(),
@@ -1305,38 +1641,26 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
       } else if (activeGroup) {
         // Group Chat
         await addDoc(collection(db, 'groups', activeGroup.id, 'messages'), {
-          senderId: currentUser.uid,
-          senderName: currentUser.displayName || 'Gamer',
-          senderAvatar: currentUser.photoURL || '',
-          text,
-          createdAt: serverTimestamp(),
+          ...payloadBase,
           read: false,
           delivered: true,
-          isDeleted: false,
-          replyTo: replyPayload,
         });
 
         await setDoc(doc(db, 'groups', activeGroup.id), {
-          lastMessage: text,
+          lastMessage: lastMessageText,
           lastMessageSender: currentUser.displayName || 'Gamer',
           lastMessageTime: serverTimestamp(),
         }, { merge: true });
       } else if (activeCommunity) {
         // Community Channel
         await addDoc(collection(db, 'communities', activeCommunity.id, 'messages'), {
-          senderId: currentUser.uid,
-          senderName: currentUser.displayName || 'Gamer',
-          senderAvatar: currentUser.photoURL || '',
-          text,
-          createdAt: serverTimestamp(),
+          ...payloadBase,
           read: false,
           delivered: true,
-          isDeleted: false,
-          replyTo: replyPayload,
         });
 
         await setDoc(doc(db, 'communities', activeCommunity.id), {
-          lastMessage: text,
+          lastMessage: lastMessageText,
           lastMessageTime: serverTimestamp(),
         }, { merge: true });
       }
@@ -1666,6 +1990,7 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
                   handleStartEdit(targetMsg);
                 }}
                 onOpenProfile={() => handleOpenUserProfile(msg.senderId)}
+                onImageClick={(url) => setViewingFullImage(url)}
                 renderTicks={renderMessageTicks}
                 formatTime={formatTime}
               />
@@ -1757,54 +2082,154 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
           </div>
         )}
 
-        {/* Message Input Box (Bottom edge-to-edge, full screen) */}
-        <form 
-          onSubmit={editingMessage ? handleSaveEdit : handleSendMessage} 
-          className="p-3 bg-[#18181b] border-t border-[#2a2a2e] flex items-center gap-2 shrink-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
-        >
-          <input
-            type="text"
-            value={messageInput}
-            onChange={handleMessageInputChange}
-            placeholder={
-              editingMessage
-                ? "Edit your message (up to 3 min)..."
-                : replyingTo
-                  ? `Reply to ${replyingTo.isMe ? 'yourself' : replyingTo.senderName}...`
-                  : activeChatGamer 
-                    ? `Message @${activeChatGamer.gamertag}...` 
-                    : "Type a message..."
-            }
-            className="flex-1 bg-[#121212] text-white text-sm px-4 py-3 rounded-xl border border-[#2a2a2e] focus:outline-none focus:border-[#5003BD] placeholder:text-[#71717a]"
-          />
-          {editingMessage ? (
-            <div className="flex items-center gap-1.5 shrink-0">
+        {/* Emoji Picker Overlay */}
+        {showEmojiPicker && !pendingImage && (
+          <div className="absolute bottom-20 left-3 right-3 max-w-sm sm:max-w-md bg-[#18181b] border border-[#2a2a2e] rounded-2xl shadow-2xl p-3 z-50 animate-in slide-in-from-bottom-2 duration-150">
+            {/* Category Tabs */}
+            <div className="flex items-center justify-between border-b border-[#2a2a2e] pb-2 mb-2 gap-1 overflow-x-auto">
+              <div className="flex items-center gap-1">
+                {(Object.keys(EMOJI_CATEGORIES) as EmojiCategoryKey[]).map((catKey) => (
+                  <button
+                    key={catKey}
+                    type="button"
+                    onClick={() => setActiveEmojiCategory(catKey)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                      activeEmojiCategory === catKey
+                        ? 'bg-[#5003BD] text-white shadow-sm shadow-[#5003BD]/50'
+                        : 'bg-zinc-800/80 text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    {EMOJI_CATEGORIES[catKey].label}
+                  </button>
+                ))}
+              </div>
               <button
                 type="button"
-                onClick={handleCancelEdit}
-                className="p-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl transition-all cursor-pointer"
-                title="Cancel edit"
+                onClick={() => setShowEmojiPicker(false)}
+                className="p-1 text-zinc-400 hover:text-white rounded-lg transition-colors cursor-pointer shrink-0 ml-1"
+                title="Close emojis"
               >
                 <X className="w-4 h-4" />
               </button>
-              <button
-                type="submit"
-                disabled={!messageInput.trim() || isSavingEdit}
-                className="p-3 bg-[#5003BD] hover:bg-[#6207e3] disabled:opacity-40 text-white rounded-xl transition-all cursor-pointer shadow-lg shadow-[#5003BD]/30"
-                title="Save changes"
-              >
-                <Check className="w-4 h-4" strokeWidth={3} />
-              </button>
+            </div>
+            {/* Emoji Grid */}
+            <div className="grid grid-cols-6 sm:grid-cols-8 gap-1 max-h-[190px] overflow-y-auto p-1">
+              {EMOJI_CATEGORIES[activeEmojiCategory].emojis.map((emoji, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => handleSelectEmoji(emoji)}
+                  className="w-10 h-10 flex items-center justify-center text-2xl rounded-xl hover:bg-zinc-800 active:scale-125 transition-transform cursor-pointer"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Message Input Box (Bottom edge-to-edge, full screen) */}
+        <form 
+          onSubmit={editingMessage ? handleSaveEdit : handleSendMessage} 
+          className="p-3 bg-[#18181b] border-t border-[#2a2a2e] flex flex-col shrink-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+        >
+          {isRecording ? (
+            <div className="flex items-center gap-3 bg-[#2a0e0e] text-red-400 rounded-xl px-4 py-3 border border-red-900/50">
+              <div className="flex-1 flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+                <span className="font-mono font-medium">{Math.floor(recordingDuration / 60)}:{(recordingDuration % 60).toString().padStart(2, '0')}</span>
+              </div>
+              <button type="button" onClick={cancelRecording} className="p-2 text-zinc-400 hover:text-red-400"><Trash2 className="w-5 h-5" /></button>
+              <button type="button" onClick={stopRecording} className="p-2 bg-red-600 text-white rounded-full hover:bg-red-700"><SquareIcon className="w-4 h-4 fill-current" /></button>
             </div>
           ) : (
-            <button
-              type="submit"
-              disabled={!messageInput.trim() || isSending}
-              className="p-3 bg-[#5003BD] hover:bg-[#6207e3] disabled:opacity-40 text-white rounded-xl transition-all cursor-pointer shadow-lg shadow-[#5003BD]/30 shrink-0"
-              title="Send message"
-            >
-              <Send className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-2 w-full">
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                className="hidden"
+                onChange={handleImageFileSelect}
+              />
+              
+              <button 
+                type="button" 
+                onClick={() => setShowEmojiPicker(!showEmojiPicker)} 
+                className={`p-2.5 rounded-xl transition-colors shrink-0 cursor-pointer ${
+                  showEmojiPicker ? 'bg-purple-900/50 text-purple-300' : 'text-zinc-400 hover:text-purple-300'
+                }`}
+                title="Select emoji"
+              >
+                <Smile className="w-5 h-5" />
+              </button>
+              
+              <button 
+                type="button" 
+                onClick={() => fileInputRef.current?.click()} 
+                className="p-2.5 text-zinc-400 hover:text-purple-300 transition-colors shrink-0 cursor-pointer"
+                title="Send a Photo"
+              >
+                <ImageIcon className="w-5 h-5" />
+              </button>
+
+              <input
+                type="text"
+                value={messageInput}
+                onChange={handleMessageInputChange}
+                placeholder={
+                  editingMessage
+                    ? "Edit your message (up to 3 min)..."
+                    : replyingTo
+                      ? `Reply to ${replyingTo.isMe ? 'yourself' : replyingTo.senderName}...`
+                      : activeChatGamer 
+                        ? `Message @${activeChatGamer.gamertag}...` 
+                        : "Type a message..."
+                }
+                className="flex-1 bg-[#121212] text-white text-sm px-4 py-3 rounded-xl border border-[#2a2a2e] focus:outline-none focus:border-[#5003BD] placeholder:text-[#71717a] min-w-0"
+              />
+              {editingMessage ? (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="p-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl transition-all cursor-pointer"
+                    title="Cancel edit"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!messageInput.trim() || isSavingEdit}
+                    className="p-3 bg-[#5003BD] hover:bg-[#6207e3] disabled:opacity-40 text-white rounded-xl transition-all cursor-pointer shadow-lg shadow-[#5003BD]/30"
+                    title="Save changes"
+                  >
+                    <Check className="w-4 h-4" strokeWidth={3} />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {!messageInput.trim() ? (
+                    <button
+                      type="button"
+                      onClick={startRecording}
+                      className="p-3 text-zinc-400 hover:text-purple-300 transition-colors cursor-pointer shrink-0"
+                      title="Record voice note"
+                    >
+                      <Mic className="w-5 h-5" />
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      disabled={isSending}
+                      className="p-3 bg-[#5003BD] hover:bg-[#6207e3] disabled:opacity-40 text-white rounded-xl transition-all cursor-pointer shadow-lg shadow-[#5003BD]/30 shrink-0"
+                      title="Send message"
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
           )}
         </form>
 
@@ -1881,6 +2306,218 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
             user={viewingUserProfile}
             onClose={() => setViewingUserProfile(null)}
           />
+        )}
+
+        {/* WhatsApp-Style Photo Preview & Caption Sender Modal */}
+        {pendingImage && (
+          <div className="fixed inset-0 z-[160] bg-black/95 flex flex-col justify-between animate-in fade-in duration-200">
+            {/* Top Bar */}
+            <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/90 to-transparent z-10">
+              <button 
+                type="button"
+                onClick={() => {
+                  setPendingImage(null);
+                  setShowEmojiPicker(false);
+                }}
+                className="w-10 h-10 rounded-full bg-zinc-900/90 hover:bg-zinc-800 text-white flex items-center justify-center transition-colors cursor-pointer shadow-lg"
+                title="Discard photo"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="text-center">
+                <span className="text-sm font-semibold text-white">
+                  {activeChatGamer 
+                    ? `@${activeChatGamer.gamertag}`
+                    : activeGroup 
+                      ? activeGroup.name 
+                      : activeCommunity 
+                        ? `#${activeCommunity.name}` 
+                        : 'Send Photo'}
+                </span>
+              </div>
+
+              <div className="w-10" />
+            </div>
+
+            {/* Center Image Preview */}
+            <div className="flex-1 flex items-center justify-center p-4 min-h-0 overflow-hidden">
+              <img 
+                src={pendingImage.dataUrl} 
+                alt="Preview" 
+                className="max-h-[62vh] max-w-full w-auto h-auto object-contain rounded-2xl shadow-2xl border border-zinc-800/80"
+              />
+            </div>
+
+            {/* Emoji Picker for Caption Modal */}
+            {showEmojiPicker && (
+              <div className="px-4 py-2 bg-[#18181b] border-t border-[#2a2a2e] max-w-lg mx-auto w-full animate-in slide-in-from-bottom-2">
+                <div className="flex items-center justify-between border-b border-[#2a2a2e] pb-1.5 mb-1.5 gap-1 overflow-x-auto">
+                  <div className="flex items-center gap-1">
+                    {(Object.keys(EMOJI_CATEGORIES) as EmojiCategoryKey[]).map((catKey) => (
+                      <button
+                        key={catKey}
+                        type="button"
+                        onClick={() => setActiveEmojiCategory(catKey)}
+                        className={`px-2 py-0.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                          activeEmojiCategory === catKey
+                            ? 'bg-[#5003BD] text-white shadow-sm shadow-[#5003BD]/50'
+                            : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        {EMOJI_CATEGORIES[catKey].label}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowEmojiPicker(false)}
+                    className="p-1 text-zinc-400 hover:text-white rounded-lg transition-colors cursor-pointer shrink-0"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-6 sm:grid-cols-8 gap-1 max-h-[140px] overflow-y-auto p-1">
+                  {EMOJI_CATEGORIES[activeEmojiCategory].emojis.map((emoji, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => handleSelectEmoji(emoji)}
+                      className="w-8 h-8 flex items-center justify-center text-xl rounded-lg hover:bg-zinc-800 active:scale-125 transition-transform cursor-pointer"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Bottom Caption Input Bar & Send button */}
+            <div className="p-3 bg-[#18181b]/95 backdrop-blur-md border-t border-[#2a2a2e] flex items-center gap-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+              <button
+                type="button"
+                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                className={`p-2.5 rounded-full transition-colors cursor-pointer shrink-0 ${
+                  showEmojiPicker ? 'bg-purple-900/50 text-purple-300' : 'text-zinc-400 hover:text-purple-300'
+                }`}
+                title="Add emoji"
+              >
+                <Smile className="w-5 h-5" />
+              </button>
+
+              <input
+                type="text"
+                value={pendingImage.caption}
+                onChange={(e) => setPendingImage(prev => prev ? { ...prev, caption: e.target.value } : null)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSendPendingImage();
+                  }
+                }}
+                placeholder="Add a caption..."
+                autoFocus
+                className="flex-1 bg-[#121212] text-white text-sm px-4 py-3 rounded-full border border-[#2a2a2e] focus:outline-none focus:border-[#5003BD] placeholder:text-[#71717a] min-w-0"
+              />
+
+              <button
+                type="button"
+                onClick={handleSendPendingImage}
+                disabled={isSendingImage}
+                className="w-12 h-12 rounded-full bg-[#5003BD] hover:bg-[#6207e3] disabled:opacity-50 text-white flex items-center justify-center transition-all shadow-lg shadow-[#5003BD]/30 cursor-pointer shrink-0"
+                title="Send photo with caption"
+              >
+                {isSendingImage ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Send className="w-5 h-5 ml-0.5" />
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Fullscreen Image Lightbox */}
+        {viewingFullImage && (
+          <div 
+            className="fixed inset-0 z-[200] bg-black/95 flex flex-col items-center justify-center p-4 animate-in fade-in duration-150"
+            onClick={() => setViewingFullImage(null)}
+          >
+            <button 
+              type="button"
+              onClick={() => setViewingFullImage(null)}
+              className="absolute top-4 right-4 w-11 h-11 rounded-full bg-zinc-800/80 hover:bg-zinc-700 text-white flex items-center justify-center cursor-pointer transition-colors shadow-xl"
+              title="Close full view"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <img 
+              src={viewingFullImage} 
+              alt="Full view" 
+              className="max-h-[90vh] max-w-[95vw] w-auto h-auto object-contain rounded-xl shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        )}
+
+        {/* Microphone Permission / Error Guidance Dialog */}
+        {micError && (
+          <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150">
+            <div className="bg-[#18181b] border border-[#2a2a2e] rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-400 shrink-0">
+                  <MicOff className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white leading-tight">{micError.title}</h3>
+                  <p className="text-xs text-zinc-400 mt-0.5">Voice recording permissions</p>
+                </div>
+              </div>
+
+              <p className="text-sm text-zinc-300 leading-relaxed">
+                {micError.message}
+              </p>
+
+              {micError.isPermissionDenied && (
+                <div className="bg-[#121212] border border-[#2a2a2e] rounded-xl p-3 text-xs text-zinc-400 space-y-1.5">
+                  <div className="font-semibold text-purple-300">How to allow in browser:</div>
+                  <p>1. In your browser's address bar at the top, look for the <strong>lock 🔒</strong>, <strong>site settings ⚙️</strong>, or <strong>microphone 🎙️</strong> icon.</p>
+                  <p>2. Set <strong>Microphone</strong> from <em>Blocked</em> to <strong>Allow</strong>.</p>
+                  <p>3. Tap <strong>Try Again</strong> below to start recording.</p>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                {micError.isPermissionDenied && typeof window !== 'undefined' && window.self !== window.top && (
+                  <button
+                    type="button"
+                    onClick={() => window.open(window.location.href, '_blank')}
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-purple-300 hover:text-white bg-purple-950/40 border border-purple-800/50 rounded-xl transition-colors cursor-pointer mr-auto"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Open in New Tab
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setMicError(null)}
+                  className="px-4 py-2 text-xs font-semibold text-zinc-400 hover:text-white rounded-xl bg-zinc-800/80 hover:bg-zinc-800 transition-colors cursor-pointer"
+                >
+                  Dismiss
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMicError(null);
+                    startRecording();
+                  }}
+                  className="px-4 py-2 text-xs font-bold text-white bg-[#5003BD] hover:bg-[#6207e3] rounded-xl transition-all shadow-lg shadow-[#5003BD]/30 cursor-pointer"
+                >
+                  Try Again
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     );
