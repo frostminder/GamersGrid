@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   MessageSquare, Users, Globe, Search, Plus, Send, X, 
   Check, ArrowLeft, UserCheck, ChevronRight, Hash, 
-  UserPlus, Reply, Trash2, Ban
+  UserPlus, Reply, Trash2, Ban, Pencil
 } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
 import { 
@@ -43,6 +43,8 @@ interface ChatMessage {
   readAt?: any;
   delivered?: boolean;
   isDeleted?: boolean;
+  isEdited?: boolean;
+  editedAt?: any;
   deletedFor?: string[];
   replyTo?: {
     id: string;
@@ -160,8 +162,10 @@ interface SwipeableMessageRowProps {
   msg: ChatMessage;
   isSelected: boolean;
   isSelectionMode: boolean;
+  canEdit?: boolean;
   onToggleSelect: (msg: ChatMessage) => void;
   onReply: (msg: ChatMessage) => void;
+  onEdit?: (msg: ChatMessage) => void;
   renderTicks: (msg: ChatMessage) => React.ReactNode;
   formatTime: (time: any) => string;
 }
@@ -170,8 +174,10 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
   msg,
   isSelected,
   isSelectionMode,
+  canEdit = false,
   onToggleSelect,
   onReply,
+  onEdit,
   renderTicks,
   formatTime,
 }) => {
@@ -369,6 +375,19 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
             >
               <Reply className="w-3.5 h-3.5" />
             </button>
+            {msg.isMe && canEdit && onEdit && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit(msg);
+                }}
+                className="p-1.5 rounded-lg bg-[#27272a]/90 hover:bg-[#3f3f46] text-zinc-400 hover:text-white transition-colors cursor-pointer"
+                title="Edit message (within 3 min)"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         )}
 
@@ -410,10 +429,13 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
             <p className="break-words">{msg.text}</p>
           )}
 
-          {/* Time & authentic WhatsApp ticks */}
+          {/* Time & authentic WhatsApp ticks & Edited label */}
           <div className={`text-[10px] mt-1 text-right flex items-center justify-end gap-1 ${
             msg.isMe && !msg.isDeleted ? 'text-purple-200' : 'text-[#71717a]'
           }`}>
+            {msg.isEdited && !msg.isDeleted && (
+              <span className="italic text-[10px] opacity-80 mr-0.5">Edited</span>
+            )}
             <span>{formatTime(msg.createdAt)}</span>
             {renderTicks(msg)}
           </div>
@@ -452,6 +474,11 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Message edit state (allowed up to 3 minutes after sending)
+  const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   // Notify parent of active chat status so header/bottom-nav can hide
   useEffect(() => {
@@ -616,6 +643,8 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
             readAt: data.readAt,
             delivered: data.delivered ?? false,
             isDeleted: data.isDeleted ?? false,
+            isEdited: data.isEdited ?? false,
+            editedAt: data.editedAt,
             deletedFor: deletedFor,
             replyTo: data.replyTo ?? null,
           });
@@ -663,6 +692,8 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
             readAt: data.readAt,
             delivered: data.delivered ?? false,
             isDeleted: data.isDeleted ?? false,
+            isEdited: data.isEdited ?? false,
+            editedAt: data.editedAt,
             deletedFor: deletedFor,
             replyTo: data.replyTo ?? null,
           });
@@ -695,6 +726,8 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
             readAt: data.readAt,
             delivered: data.delivered ?? false,
             isDeleted: data.isDeleted ?? false,
+            isEdited: data.isEdited ?? false,
+            editedAt: data.editedAt,
             deletedFor: deletedFor,
             replyTo: data.replyTo ?? null,
           });
@@ -815,6 +848,8 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
     setSelectedMessageIds(new Set());
     setShowDeleteModal(false);
     setReplyingTo(null);
+    setEditingMessage(null);
+    setEditError(null);
     onChatActiveChange?.(false);
   };
 
@@ -961,6 +996,164 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
       setIsDeleting(false);
       setShowDeleteModal(false);
       setSelectedMessageIds(new Set());
+    }
+  };
+
+  // Helper to determine whether a message can be edited:
+  // Must be sent by current user, not deleted, and sent within the last 3 minutes (180,000 ms)
+  const canEditMessage = (msg: ChatMessage | null): boolean => {
+    if (!msg || !msg.isMe || msg.isDeleted) return false;
+    if (!msg.createdAt) return true; // Just sent locally, server timestamp pending
+    const createdMillis = msg.createdAt?.toMillis 
+      ? msg.createdAt.toMillis() 
+      : typeof msg.createdAt === 'number' 
+        ? msg.createdAt 
+        : msg.createdAt?.seconds 
+          ? msg.createdAt.seconds * 1000 
+          : null;
+    if (!createdMillis) return true;
+    const elapsed = Date.now() - createdMillis;
+    return elapsed >= 0 && elapsed <= 3 * 60 * 1000;
+  };
+
+  // Human readable time remaining for editing window (countdown)
+  const getEditTimeRemaining = (msg: ChatMessage | null): string => {
+    if (!msg || !msg.createdAt) return '3m left';
+    const createdMillis = msg.createdAt?.toMillis 
+      ? msg.createdAt.toMillis() 
+      : typeof msg.createdAt === 'number' 
+        ? msg.createdAt 
+        : msg.createdAt?.seconds 
+          ? msg.createdAt.seconds * 1000 
+          : null;
+    if (!createdMillis) return '3m left';
+    const remainingMs = (3 * 60 * 1000) - (Date.now() - createdMillis);
+    if (remainingMs <= 0) return 'Expired';
+    const mins = Math.floor(remainingMs / 60000);
+    const secs = Math.floor((remainingMs % 60000) / 1000);
+    return `${mins}:${secs < 10 ? '0' : ''}${secs} left`;
+  };
+
+  // Live timer tick when editing so countdown displays in real time
+  useEffect(() => {
+    if (!editingMessage) return;
+    const interval = setInterval(() => {
+      // Check if window expired while user was typing
+      if (!canEditMessage(editingMessage)) {
+        setEditError('Editing time expired (3 minutes limit reached).');
+        setEditingMessage(null);
+        setMessageInput('');
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [editingMessage]);
+
+  // Start editing a message
+  const handleStartEdit = (msg: ChatMessage) => {
+    if (!canEditMessage(msg)) {
+      setEditError('Messages can only be edited within 3 minutes of sending.');
+      setTimeout(() => setEditError(null), 4000);
+      return;
+    }
+    setEditingMessage(msg);
+    setMessageInput(msg.text);
+    setReplyingTo(null);
+    setSelectedMessageIds(new Set());
+    setEditError(null);
+  };
+
+  // Cancel edit mode
+  const handleCancelEdit = () => {
+    setEditingMessage(null);
+    setMessageInput('');
+    setEditError(null);
+  };
+
+  // Save edited message to Firestore
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMessage || !currentUser || isSavingEdit) return;
+
+    const trimmed = messageInput.trim();
+    if (!trimmed) return;
+
+    // Strict validation: must still be within 3 minutes
+    if (!canEditMessage(editingMessage)) {
+      setEditError('Editing window expired. Messages can only be edited within 3 minutes of sending.');
+      setTimeout(() => setEditError(null), 5000);
+      setEditingMessage(null);
+      setMessageInput('');
+      return;
+    }
+
+    // If unchanged, simply close edit mode
+    if (trimmed === editingMessage.text) {
+      setEditingMessage(null);
+      setMessageInput('');
+      return;
+    }
+
+    setIsSavingEdit(true);
+    setEditError(null);
+
+    try {
+      const chatId = activeChatId;
+      const groupId = activeGroup?.id;
+      const communityId = activeCommunity?.id;
+
+      if (chatId) {
+        await updateDoc(doc(db, 'chats', chatId, 'messages', editingMessage.id), {
+          text: trimmed,
+          isEdited: true,
+          editedAt: serverTimestamp(),
+        });
+
+        // Update chat preview if this was the last message
+        const currentChat = chats.find((c) => c.id === chatId);
+        if (currentChat?.lastMessage === editingMessage.text) {
+          await setDoc(
+            doc(db, 'chats', chatId),
+            {
+              lastMessage: trimmed,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+        }
+      } else if (groupId) {
+        await updateDoc(doc(db, 'groups', groupId, 'messages', editingMessage.id), {
+          text: trimmed,
+          isEdited: true,
+          editedAt: serverTimestamp(),
+        });
+      } else if (communityId) {
+        await updateDoc(doc(db, 'communities', communityId, 'messages', editingMessage.id), {
+          text: trimmed,
+          isEdited: true,
+          editedAt: serverTimestamp(),
+        });
+      }
+
+      // Optimistic local state update
+      setCurrentMessages((prev) =>
+        prev.map((m) =>
+          m.id === editingMessage.id
+            ? {
+                ...m,
+                text: trimmed,
+                isEdited: true,
+              }
+            : m
+        )
+      );
+
+      setEditingMessage(null);
+      setMessageInput('');
+    } catch (err) {
+      console.error('Error saving edited message:', err);
+      setEditError('Failed to save message edit. Please try again.');
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -1207,12 +1400,25 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
             </div>
 
             <div className="flex items-center gap-2">
-              {/* If single message selected and not deleted, offer quick reply */}
+              {/* If single message selected, offer quick reply and edit (if within 3 mins) */}
               {selectedMessageIds.size === 1 && (() => {
                 const singleId = Array.from(selectedMessageIds)[0];
-                const singleMsg = currentMessages.find(m => m.id === singleId);
-                if (singleMsg && !singleMsg.isDeleted) {
-                  return (
+                const singleMsg = currentMessages.find((m) => m.id === singleId);
+                if (!singleMsg || singleMsg.isDeleted) return null;
+
+                const isEditable = canEditMessage(singleMsg);
+
+                return (
+                  <>
+                    {isEditable && (
+                      <button
+                        onClick={() => handleStartEdit(singleMsg)}
+                        className="p-2 rounded-xl bg-black/30 hover:bg-black/50 text-purple-200 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5"
+                        title={`Edit message (${getEditTimeRemaining(singleMsg)})`}
+                      >
+                        <Pencil className="w-5 h-5" />
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         setReplyingTo(singleMsg);
@@ -1223,9 +1429,8 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
                     >
                       <Reply className="w-5 h-5" />
                     </button>
-                  );
-                }
-                return null;
+                  </>
+                );
               })()}
 
               {/* Dustbin / Trash icon at top as requested */}
@@ -1314,9 +1519,14 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
                 msg={msg}
                 isSelected={selectedMessageIds.has(msg.id)}
                 isSelectionMode={selectedMessageIds.size > 0}
+                canEdit={canEditMessage(msg)}
                 onToggleSelect={toggleSelectMessage}
                 onReply={(targetMsg) => {
                   setReplyingTo(targetMsg);
+                  setEditingMessage(null);
+                }}
+                onEdit={(targetMsg) => {
+                  handleStartEdit(targetMsg);
                 }}
                 renderTicks={renderMessageTicks}
                 formatTime={formatTime}
@@ -1340,8 +1550,52 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
           </div>
         )}
 
+        {/* Edit Error / 3-minute limit notification */}
+        {editError && (
+          <div className="px-4 py-2 bg-red-950/90 border-t border-red-800 text-red-200 text-xs flex items-center justify-between animate-in fade-in shrink-0">
+            <span>{editError}</span>
+            <button
+              type="button"
+              onClick={() => setEditError(null)}
+              className="p-1 text-red-300 hover:text-white transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* WhatsApp-Style Editing Preview Bar */}
+        {editingMessage && (
+          <div className="px-4 py-2.5 bg-[#18181b] border-t border-[#5003BD]/50 flex items-center justify-between gap-3 animate-in slide-in-from-bottom-2 shrink-0">
+            <div className="flex items-start gap-2.5 min-w-0 border-l-3 border-[#a855f7] pl-2.5 py-0.5">
+              <Pencil className="w-3.5 h-3.5 text-[#a855f7] shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-bold text-[#a855f7] leading-tight">
+                    Editing message
+                  </p>
+                  <span className="text-[10px] text-purple-300 bg-[#5003BD]/30 px-1.5 py-0.2 rounded-full font-mono">
+                    {getEditTimeRemaining(editingMessage)}
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-300 truncate mt-0.5 opacity-90 max-w-[280px] sm:max-w-md">
+                  {editingMessage.text}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleCancelEdit}
+              className="p-1 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer shrink-0"
+              title="Cancel edit"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* WhatsApp-Style Replying Preview Bar */}
-        {replyingTo && (
+        {replyingTo && !editingMessage && (
           <div className="px-4 py-2.5 bg-[#18181b] border-t border-[#2a2a2e] flex items-center justify-between gap-3 animate-in slide-in-from-bottom-2 shrink-0">
             <div className="flex items-start gap-2.5 min-w-0 border-l-3 border-[#a855f7] pl-2.5 py-0.5">
               <Reply className="w-3.5 h-3.5 text-[#a855f7] shrink-0 mt-0.5" />
@@ -1366,27 +1620,54 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
         )}
 
         {/* Message Input Box (Bottom edge-to-edge, full screen) */}
-        <form onSubmit={handleSendMessage} className="p-3 bg-[#18181b] border-t border-[#2a2a2e] flex items-center gap-2 shrink-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <form 
+          onSubmit={editingMessage ? handleSaveEdit : handleSendMessage} 
+          className="p-3 bg-[#18181b] border-t border-[#2a2a2e] flex items-center gap-2 shrink-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+        >
           <input
             type="text"
             value={messageInput}
             onChange={handleMessageInputChange}
             placeholder={
-              replyingTo
-                ? `Reply to ${replyingTo.isMe ? 'yourself' : replyingTo.senderName}...`
-                : activeChatGamer 
-                  ? `Message @${activeChatGamer.gamertag}...` 
-                  : "Type a message..."
+              editingMessage
+                ? "Edit your message (up to 3 min)..."
+                : replyingTo
+                  ? `Reply to ${replyingTo.isMe ? 'yourself' : replyingTo.senderName}...`
+                  : activeChatGamer 
+                    ? `Message @${activeChatGamer.gamertag}...` 
+                    : "Type a message..."
             }
             className="flex-1 bg-[#121212] text-white text-sm px-4 py-3 rounded-xl border border-[#2a2a2e] focus:outline-none focus:border-[#5003BD] placeholder:text-[#71717a]"
           />
-          <button
-            type="submit"
-            disabled={!messageInput.trim() || isSending}
-            className="p-3 bg-[#5003BD] hover:bg-[#6207e3] disabled:opacity-40 text-white rounded-xl transition-all cursor-pointer shadow-lg shadow-[#5003BD]/30 shrink-0"
-          >
-            <Send className="w-4 h-4" />
-          </button>
+          {editingMessage ? (
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                className="p-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl transition-all cursor-pointer"
+                title="Cancel edit"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <button
+                type="submit"
+                disabled={!messageInput.trim() || isSavingEdit}
+                className="p-3 bg-[#5003BD] hover:bg-[#6207e3] disabled:opacity-40 text-white rounded-xl transition-all cursor-pointer shadow-lg shadow-[#5003BD]/30"
+                title="Save changes"
+              >
+                <Check className="w-4 h-4" strokeWidth={3} />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="submit"
+              disabled={!messageInput.trim() || isSending}
+              className="p-3 bg-[#5003BD] hover:bg-[#6207e3] disabled:opacity-40 text-white rounded-xl transition-all cursor-pointer shadow-lg shadow-[#5003BD]/30 shrink-0"
+              title="Send message"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          )}
         </form>
 
         {/* Delete Messages Modal with Granular Options */}
