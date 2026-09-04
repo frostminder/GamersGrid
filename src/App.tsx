@@ -16,7 +16,7 @@ function AppContent() {
   return (
     <div className="w-full h-[100dvh] overflow-y-auto bg-[#121212] text-white flex flex-col items-center justify-start hide-scrollbar">
       <Routes>
-        <Route path="/" element={<SplashScreen autoComplete={true} onComplete={() => navigate('/auth')} />} />
+        <Route path="/" element={<SplashScreen autoComplete={true} onComplete={() => navigate('/auth', { replace: true })} />} />
         <Route path="/auth" element={<AuthScreen />} />
         <Route path="/onboarding" element={<OnboardingScreen />} />
         <Route path="/home" element={<HomeScreen />} />
