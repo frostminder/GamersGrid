@@ -4,7 +4,7 @@ import { GamersGridLogo } from '../components/GamersGridLogo';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { auth, db } from '../lib/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, collection, query, where } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { ProfileTab } from '../components/ProfileTab';
 import { TournamentHub } from '../components/TournamentHub';
@@ -24,6 +24,8 @@ export const HomeScreen: React.FC = () => {
   const [activeTab, setActiveTab] = useState('home');
   const [isChatActive, setIsChatActive] = useState(false);
   const [dismissInstall, setDismissInstall] = useState(false);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState<number>(0);
   const navigate = useNavigate();
 
   const handleTabChange = (tab: string) => {
@@ -34,19 +36,65 @@ export const HomeScreen: React.FC = () => {
   useEffect(() => {
     let unsubscribeSnapshot: () => void;
     let stopPresence: (() => void) | undefined;
+    let unsubNotifs: (() => void) | undefined;
+    let unsubChats: (() => void) | undefined;
     
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (!currentUser) {
         navigate("/auth");
         setUserProfile(null);
+        setUnreadNotificationsCount(0);
+        setUnreadMessagesCount(0);
         if (stopPresence) {
           stopPresence();
           stopPresence = undefined;
+        }
+        if (unsubNotifs) {
+          unsubNotifs();
+          unsubNotifs = undefined;
+        }
+        if (unsubChats) {
+          unsubChats();
+          unsubChats = undefined;
         }
       } else {
         if (!stopPresence) {
           stopPresence = startPresenceTracking(currentUser.uid);
         }
+
+        // Real-time unread notifications listener
+        const notifQ = query(
+          collection(db, 'notifications'),
+          where('userId', '==', currentUser.uid),
+          where('read', '==', false)
+        );
+        unsubNotifs = onSnapshot(notifQ, (snap) => {
+          setUnreadNotificationsCount(snap.docs.length);
+        }, (err) => {
+          console.error('Error listening to notifications count:', err);
+        });
+
+        // Real-time unread messages listener
+        const chatsQ = query(
+          collection(db, 'chats'),
+          where('participants', 'array-contains', currentUser.uid)
+        );
+        unsubChats = onSnapshot(chatsQ, (snap) => {
+          let total = 0;
+          snap.forEach((docSnap) => {
+            const data = docSnap.data();
+            const count = data.unreadCount?.[currentUser.uid];
+            if (typeof count === 'number' && count > 0) {
+              total += count;
+            } else if (data.lastMessageSenderId && data.lastMessageSenderId !== currentUser.uid && data.read === false) {
+              total += 1;
+            }
+          });
+          setUnreadMessagesCount(total);
+        }, (err) => {
+          console.error('Error listening to unread messages count:', err);
+        });
+
         unsubscribeSnapshot = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
@@ -81,6 +129,8 @@ export const HomeScreen: React.FC = () => {
       unsubscribe();
       if (unsubscribeSnapshot) unsubscribeSnapshot();
       if (stopPresence) stopPresence();
+      if (unsubNotifs) unsubNotifs();
+      if (unsubChats) unsubChats();
     };
   }, []);
 
@@ -108,9 +158,12 @@ export const HomeScreen: React.FC = () => {
             <button 
               onClick={() => setActiveTab('notifications')}
               className={`relative p-2 rounded-full transition-colors group ${activeTab === 'notifications' ? 'bg-[#2a2a2e]' : 'hover:bg-[#2a2a2e]'}`}
+              title={unreadNotificationsCount > 0 ? `${unreadNotificationsCount} unread notification${unreadNotificationsCount > 1 ? 's' : ''}` : 'Notifications'}
             >
               <Bell className={`w-5 h-5 transition-colors ${activeTab === 'notifications' ? 'text-white' : 'text-[#aaaaaa] group-hover:text-white'}`} />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#5003BD] rounded-full border border-[#121212]"></span>
+              {unreadNotificationsCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-[#121212] shadow-[0_0_8px_rgba(239,68,68,0.9)] animate-pulse"></span>
+              )}
             </button>
             
             {/* User Avatar */}
@@ -301,6 +354,12 @@ export const HomeScreen: React.FC = () => {
                   className={`relative z-10 w-6 h-6 transition-colors ${isActive ? 'text-white' : 'text-[#aaaaaa] hover:text-white'}`} 
                   strokeWidth={isActive ? 2.5 : 2} 
                 />
+                {/* Red dot and number for unread messages */}
+                {tab.id === 'messages' && unreadMessagesCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[19px] h-[19px] px-1 bg-red-600 text-white text-[10px] font-extrabold rounded-full flex items-center justify-center border-2 border-[#121212] shadow-[0_0_8px_rgba(220,38,38,0.7)] z-20 animate-in zoom-in">
+                    {unreadMessagesCount > 99 ? '99+' : unreadMessagesCount}
+                  </span>
+                )}
               </button>
             );
           })}

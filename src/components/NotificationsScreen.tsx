@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Heart, UserPlus, MessageCircle, Check } from 'lucide-react';
+import { Bell, Heart, UserPlus, MessageCircle, Check, CheckCheck } from 'lucide-react';
 import { db, auth } from '../lib/firebase';
-import { collection, query, where, orderBy, getDocs, updateDoc, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, orderBy, getDocs, updateDoc, doc, getDoc, writeBatch, onSnapshot } from 'firebase/firestore';
 import { UserProfile } from '../lib/userService';
 
 interface NotificationItem {
@@ -13,45 +13,107 @@ interface NotificationItem {
   senderProfile?: UserProfile;
 }
 
+// Format time with explicit 12-hour AM / PM format
+const formatNotificationTime = (timestamp: any): string => {
+  if (!timestamp) return 'Just now';
+  let date: Date;
+  if (timestamp?.toDate) {
+    date = timestamp.toDate();
+  } else if (typeof timestamp === 'number') {
+    date = new Date(timestamp);
+  } else if (timestamp?.seconds) {
+    date = new Date(timestamp.seconds * 1000);
+  } else if (timestamp instanceof Date) {
+    date = timestamp;
+  } else {
+    return 'Just now';
+  }
+
+  const now = new Date();
+  const isToday = now.toDateString() === date.toDateString();
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday = yesterday.toDateString() === date.toDateString();
+
+  const timeStr = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+
+  if (isToday) {
+    return `Today at ${timeStr}`;
+  } else if (isYesterday) {
+    return `Yesterday at ${timeStr}`;
+  } else {
+    const dateStr = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    return `${dateStr} at ${timeStr}`;
+  }
+};
+
 export const NotificationsScreen = () => {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchNotifications = async () => {
-      if (!auth.currentUser) return;
-      
-      const q = query(
-        collection(db, 'notifications'), 
-        where('userId', '==', auth.currentUser.uid),
-        orderBy('createdAt', 'desc')
-      );
-      
-      const snapshot = await getDocs(q);
+    if (!auth.currentUser) return;
+
+    const q = query(
+      collection(db, 'notifications'), 
+      where('userId', '==', auth.currentUser.uid),
+      orderBy('createdAt', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
       const notifs: NotificationItem[] = [];
-      
       for (const d of snapshot.docs) {
         const data = d.data() as any;
-        const senderDoc = await getDoc(doc(db, 'users', data.senderId));
-        
+        let senderProfile: UserProfile | undefined = undefined;
+        try {
+          const senderDoc = await getDoc(doc(db, 'users', data.senderId));
+          if (senderDoc.exists()) {
+            senderProfile = { uid: senderDoc.id, ...senderDoc.data() } as UserProfile;
+          }
+        } catch {}
+
         notifs.push({
           id: d.id,
           ...data,
-          senderProfile: senderDoc.exists() ? { uid: senderDoc.id, ...senderDoc.data() } : undefined
+          senderProfile,
         });
       }
-      
       setNotifications(notifs);
       setLoading(false);
-    };
-    
-    fetchNotifications();
+    }, (err) => {
+      console.error('Error in notifications snapshot:', err);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const markAsRead = async (id: string) => {
-    await updateDoc(doc(db, 'notifications', id), { read: true });
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    try {
+      await updateDoc(doc(db, 'notifications', id), { read: true });
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    } catch (err) {
+      console.error('Error marking notification read:', err);
+    }
   };
+
+  const markAllAsRead = async () => {
+    const unread = notifications.filter(n => !n.read);
+    if (unread.length === 0) return;
+    try {
+      const batch = writeBatch(db);
+      unread.forEach(n => {
+        batch.update(doc(db, 'notifications', n.id), { read: true });
+      });
+      await batch.commit();
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    } catch (err) {
+      console.error('Error marking all as read:', err);
+    }
+  };
+
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   const getIcon = (type: string) => {
     switch(type) {
@@ -73,8 +135,22 @@ export const NotificationsScreen = () => {
 
   return (
     <div className="flex-1 w-full flex flex-col h-full bg-[#121212] pt-0 px-0 pb-16 animate-in fade-in">
-      <div className="sticky top-0 z-10 bg-[#121212] pb-2 pt-0">
-        <h1 className="text-xl font-bold text-white mb-2">Notifications</h1>
+      <div className="sticky top-0 z-10 bg-[#121212] pb-2 pt-0 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-bold text-white">Notifications</h1>
+          {unreadCount > 0 && (
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
+          )}
+        </div>
+        {unreadCount > 0 && (
+          <button
+            onClick={markAllAsRead}
+            className="flex items-center gap-1 text-xs font-semibold text-purple-400 hover:text-purple-300 bg-purple-950/40 hover:bg-purple-900/50 border border-purple-800/40 px-2.5 py-1 rounded-full transition-colors cursor-pointer"
+          >
+            <CheckCheck className="w-3.5 h-3.5" />
+            Mark all read
+          </button>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto hide-scrollbar">
@@ -93,8 +169,8 @@ export const NotificationsScreen = () => {
               <div 
                 key={notif.id}
                 onClick={() => !notif.read && markAsRead(notif.id)}
-                className={`flex gap-3 p-4 rounded-xl border transition-colors cursor-pointer ${
-                  notif.read ? 'bg-[#1a1a1a] border-[#2a2a2e]' : 'bg-[#232323] border-[#5003BD]/50 shadow-md shadow-[#5003BD]/10'
+                className={`flex gap-3 p-3.5 rounded-xl border transition-colors cursor-pointer ${
+                  notif.read ? 'bg-[#1a1a1a] border-[#2a2a2e]' : 'bg-[#232323] border-red-500/40 shadow-md shadow-red-500/5'
                 }`}
               >
                 <div className="w-10 h-10 rounded-full bg-[#2a2a2e] flex items-center justify-center shrink-0 overflow-hidden relative">
@@ -110,17 +186,17 @@ export const NotificationsScreen = () => {
                   </div>
                 </div>
                 
-                <div className="flex-1">
-                  <p className="text-sm text-[#CCCCCC]">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-[#CCCCCC] leading-snug">
                     {getMessage(notif.type, notif.senderProfile?.gamertag || 'Someone')}
                   </p>
-                  <span className="text-xs text-[#777777] mt-1 block">
-                    {notif.createdAt?.toDate ? notif.createdAt.toDate().toLocaleDateString() : 'Just now'}
+                  <span className="text-xs text-[#a1a1aa] mt-1 block font-medium">
+                    {formatNotificationTime(notif.createdAt)}
                   </span>
                 </div>
 
                 {!notif.read && (
-                  <div className="w-2 h-2 rounded-full bg-[#7A22EC] mt-1.5 shrink-0"></div>
+                  <div className="w-2.5 h-2.5 rounded-full bg-red-500 mt-2 shrink-0 shadow-[0_0_6px_rgba(239,68,68,0.8)]"></div>
                 )}
               </div>
             ))}

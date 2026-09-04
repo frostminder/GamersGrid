@@ -19,7 +19,8 @@ import {
   where, 
   orderBy, 
   onSnapshot, 
-  serverTimestamp 
+  serverTimestamp,
+  increment
 } from 'firebase/firestore';
 import { 
   getMutualFollowers, 
@@ -30,6 +31,7 @@ import {
   PresenceData
 } from '../lib/presenceService';
 import { searchUsers, UserProfile } from '../lib/userService';
+import { PublicProfileModal } from './PublicProfileModal';
 
 interface ChatMessage {
   id: string;
@@ -166,6 +168,7 @@ interface SwipeableMessageRowProps {
   onToggleSelect: (msg: ChatMessage) => void;
   onReply: (msg: ChatMessage) => void;
   onEdit?: (msg: ChatMessage) => void;
+  onOpenProfile?: () => void;
   renderTicks: (msg: ChatMessage) => React.ReactNode;
   formatTime: (time: any) => string;
 }
@@ -178,6 +181,7 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
   onToggleSelect,
   onReply,
   onEdit,
+  onOpenProfile,
   renderTicks,
   formatTime,
 }) => {
@@ -316,7 +320,7 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
 
   return (
     <div 
-      className={`relative w-full flex flex-col ${msg.isMe ? 'items-end' : 'items-start'} group select-none transition-colors duration-150 py-1 ${
+      className={`relative w-full max-w-full min-w-0 flex flex-col ${msg.isMe ? 'items-end' : 'items-start'} group select-none transition-colors duration-150 py-0.5 px-0.5 ${
         isSelected ? 'bg-[#5003BD]/15 rounded-xl' : ''
       }`}
       onTouchStart={handleTouchStart}
@@ -344,12 +348,20 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
       </div>
 
       {!msg.isMe && (
-        <span className="text-[11px] text-[#71717a] font-medium ml-1 mb-1">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenProfile?.();
+          }}
+          className="text-[11px] text-[#71717a] hover:text-purple-300 font-medium ml-1 mb-0.5 cursor-pointer transition-colors text-left"
+          title="View profile"
+        >
           {msg.senderName}
-        </span>
+        </button>
       )}
 
-      <div className="relative flex items-center gap-2 max-w-[85%] sm:max-w-[70%]">
+      <div className="relative flex items-center gap-1.5 max-w-[85vw] sm:max-w-[75%] md:max-w-[65%] min-w-0">
         {/* Selection checkbox indicator when in selection mode */}
         {isSelectionMode && (
           <div className={`shrink-0 flex items-center justify-center w-5 h-5 rounded-full border transition-all cursor-pointer ${
@@ -391,13 +403,13 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
           </div>
         )}
 
-        {/* Message Bubble with dynamic translation and selected ring */}
+        {/* Message Bubble with reduced height, screen-fitting word break and dynamic translation */}
         <div 
           style={{
             transform: `translateX(${offsetX}px)`,
             transition: isSwiping ? 'none' : 'transform 0.2s cubic-bezier(0.2, 0, 0, 1)',
           }}
-          className={`relative px-3.5 py-2 rounded-2xl text-sm leading-relaxed cursor-pointer transition-all ${
+          className={`relative px-3 py-1.5 rounded-2xl text-sm leading-snug cursor-pointer transition-all max-w-full min-w-0 [overflow-wrap:anywhere] [word-break:break-word] ${
             isSelected ? 'ring-2 ring-[#a855f7] ring-offset-2 ring-offset-[#121212]' : ''
           } ${
             msg.isDeleted
@@ -409,7 +421,7 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
         >
           {/* Quoted reply preview */}
           {!msg.isDeleted && msg.replyTo && (
-            <div className="mb-2 p-2 rounded-lg bg-black/25 border-l-3 border-[#a855f7] text-left">
+            <div className="mb-1.5 p-1.5 rounded-lg bg-black/25 border-l-3 border-[#a855f7] text-left">
               <div className="text-[11px] font-bold text-[#a855f7] truncate">
                 {msg.replyTo.senderName}
               </div>
@@ -419,18 +431,20 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
             </div>
           )}
 
-          {/* Message Text or Deleted Notice */}
+          {/* Message Text with full screen-aware wrapping */}
           {msg.isDeleted ? (
             <div className="flex items-center gap-1.5 italic text-zinc-400 text-xs py-0.5">
               <Ban className="w-3.5 h-3.5 shrink-0 text-zinc-500" />
               <span>{msg.isMe ? 'You deleted this message' : 'This message was deleted'}</span>
             </div>
           ) : (
-            <p className="break-words">{msg.text}</p>
+            <p className="break-words [overflow-wrap:anywhere] [word-break:break-word] whitespace-pre-wrap select-text text-sm leading-snug">
+              {msg.text}
+            </p>
           )}
 
           {/* Time & authentic WhatsApp ticks & Edited label */}
-          <div className={`text-[10px] mt-1 text-right flex items-center justify-end gap-1 ${
+          <div className={`text-[10px] mt-0.5 text-right flex items-center justify-end gap-1 ${
             msg.isMe && !msg.isDeleted ? 'text-purple-200' : 'text-[#71717a]'
           }`}>
             {msg.isEdited && !msg.isDeleted && (
@@ -507,6 +521,38 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+
+  // Profile modal state for tapping chat partner's avatar or username
+  const [viewingUserProfile, setViewingUserProfile] = useState<UserProfile | null>(null);
+
+  const handleOpenUserProfile = async (userId: string) => {
+    if (!userId) return;
+    try {
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      if (userDoc.exists()) {
+        setViewingUserProfile({ uid: userDoc.id, ...userDoc.data() } as UserProfile);
+      } else if (activeChatGamer && activeChatGamer.uid === userId) {
+        setViewingUserProfile({
+          uid: activeChatGamer.uid,
+          email: '',
+          gamertag: activeChatGamer.gamertag,
+          name: activeChatGamer.name,
+          photoURL: activeChatGamer.photoURL,
+        } as UserProfile);
+      }
+    } catch (err) {
+      console.error('Error opening user profile:', err);
+      if (activeChatGamer && activeChatGamer.uid === userId) {
+        setViewingUserProfile({
+          uid: activeChatGamer.uid,
+          email: '',
+          gamertag: activeChatGamer.gamertag,
+          name: activeChatGamer.name,
+          photoURL: activeChatGamer.photoURL,
+        } as UserProfile);
+      }
+    }
+  };
 
   // Notify parent of active chat status so header/bottom-nav can hide
   useEffect(() => {
@@ -635,7 +681,14 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
     let chatDocUnsub = () => {};
 
     if (activeChatId) {
-      // 1-on-1 direct chat
+      // 1-on-1 direct chat: reset unread count for current user
+      if (currentUser?.uid) {
+        updateDoc(doc(db, 'chats', activeChatId), {
+          [`unreadCount.${currentUser.uid}`]: 0,
+          read: true,
+        }).catch(() => {});
+      }
+
       const messagesRef = collection(db, 'chats', activeChatId, 'messages');
       const q = query(messagesRef, orderBy('createdAt', 'asc'));
       messagesUnsub = onSnapshot(q, (snapshot) => {
@@ -1206,6 +1259,7 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
         // Direct Chat: check partner presence for initial delivery status
         const partnerStatus = activeChatGamer ? (presences[activeChatGamer.uid] || 'offline') : 'offline';
         const isDelivered = partnerStatus === 'online' || partnerStatus === 'background';
+        const partnerId = activeChatGamer?.uid || chats.find(c => c.id === activeChatId)?.participants?.find(p => p !== currentUser.uid);
 
         await addDoc(collection(db, 'chats', activeChatId, 'messages'), {
           senderId: currentUser.uid,
@@ -1224,6 +1278,8 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
           lastMessageSenderId: currentUser.uid,
           lastMessageSenderName: currentUser.displayName || 'Gamer',
           updatedAt: serverTimestamp(),
+          read: false,
+          ...(partnerId ? { [`unreadCount.${partnerId}`]: increment(1) } : {}),
           typing: {
             [currentUser.uid]: 0,
           }
@@ -1377,14 +1433,22 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
     };
   };
 
-  // Format timestamp helper
+  // Format timestamp helper with explicit AM/PM format
   const formatTime = (timestamp: any) => {
     if (!timestamp) return 'Just now';
-    if (timestamp.toDate) {
-      const d = timestamp.toDate();
-      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    let d: Date;
+    if (timestamp?.toDate) {
+      d = timestamp.toDate();
+    } else if (typeof timestamp === 'number') {
+      d = new Date(timestamp);
+    } else if (timestamp?.seconds) {
+      d = new Date(timestamp.seconds * 1000);
+    } else if (timestamp instanceof Date) {
+      d = timestamp;
+    } else {
+      return 'Just now';
     }
-    return 'Just now';
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
   };
 
   // ========================================================
@@ -1483,7 +1547,12 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
               </button>
 
               {/* Avatar with presence */}
-              <div className="relative">
+              <div 
+                onClick={() => activeChatGamer && handleOpenUserProfile(activeChatGamer.uid)}
+                className={`relative ${activeChatGamer ? 'cursor-pointer hover:opacity-85 active:scale-95 transition-all' : ''}`}
+                role={activeChatGamer ? 'button' : undefined}
+                title={activeChatGamer ? `View @${activeChatGamer.gamertag}'s profile` : undefined}
+              >
                 {activeChatGamer ? (
                   <div className="w-10 h-10 rounded-full bg-[#27272a] border border-[#3f3f46] overflow-hidden">
                     {activeChatGamer.photoURL ? (
@@ -1513,7 +1582,12 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
                 )}
               </div>
 
-              <div>
+              <div 
+                onClick={() => activeChatGamer && handleOpenUserProfile(activeChatGamer.uid)}
+                className={activeChatGamer ? 'cursor-pointer hover:opacity-85 transition-opacity' : ''}
+                role={activeChatGamer ? 'button' : undefined}
+                title={activeChatGamer ? `View @${activeChatGamer.gamertag}'s profile` : undefined}
+              >
                 <div className="flex items-center gap-2">
                   <h3 className="font-bold text-white text-sm sm:text-base leading-none">{title}</h3>
                   {/* Status dot beside name */}
@@ -1533,7 +1607,7 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
         )}
 
         {/* Messages Stream */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3.5 hide-scrollbar bg-[#121212]">
+        <div className="flex-1 w-full max-w-full overflow-y-auto overflow-x-hidden px-3 sm:px-4 py-2.5 space-y-2 hide-scrollbar bg-[#121212]">
           {currentMessages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-6 text-[#71717a]">
               <MessageSquare className="w-10 h-10 text-[#5003BD] mb-2 opacity-80" />
@@ -1556,6 +1630,7 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
                 onEdit={(targetMsg) => {
                   handleStartEdit(targetMsg);
                 }}
+                onOpenProfile={() => handleOpenUserProfile(msg.senderId)}
                 renderTicks={renderMessageTicks}
                 formatTime={formatTime}
               />
@@ -1764,6 +1839,14 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
             </div>
           );
         })()}
+
+        {/* Profile Modal when user taps partner icon or username in active chat */}
+        {viewingUserProfile && (
+          <PublicProfileModal
+            user={viewingUserProfile}
+            onClose={() => setViewingUserProfile(null)}
+          />
+        )}
       </div>
     );
   }
@@ -2043,8 +2126,15 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
                     className="bg-[#18181c] hover:bg-[#202026] border border-[#2a2a2e] hover:border-[#5003BD]/50 p-3.5 rounded-2xl flex items-center justify-between cursor-pointer transition-all duration-200 group"
                   >
                     <div className="flex items-center gap-3.5 min-w-0">
-                      {/* Avatar with Presence Dot at bottom-right */}
-                      <div className="relative shrink-0">
+                      {/* Avatar with Presence Dot at bottom-right - tap to view profile */}
+                      <div 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenUserProfile(partner.uid);
+                        }}
+                        className="relative shrink-0 cursor-pointer hover:opacity-85 transition-opacity"
+                        title={`View @${partner.gamertag}'s profile`}
+                      >
                         <div className="w-12 h-12 rounded-full bg-[#27272a] border border-[#3f3f46] overflow-hidden">
                           {partner.photoURL ? (
                             <img src={partner.photoURL} alt={partner.name} className="w-full h-full object-cover" />
@@ -2091,7 +2181,17 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
                       <span className="text-[10px] text-[#71717a] font-mono">
                         {formatTime(chat.updatedAt)}
                       </span>
-                      <ChevronRight className="w-4 h-4 text-[#52525b] group-hover:text-white transition-colors" />
+                      {(() => {
+                        const unread = chat.unreadCount?.[currentUser?.uid || ''] || (chat.lastMessageSenderId !== currentUser?.uid && chat.read === false ? 1 : 0);
+                        if (unread > 0) {
+                          return (
+                            <span className="min-w-[18px] h-[18px] px-1 bg-red-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-md">
+                              {unread > 99 ? '99+' : unread}
+                            </span>
+                          );
+                        }
+                        return <ChevronRight className="w-4 h-4 text-[#52525b] group-hover:text-white transition-colors" />;
+                      })()}
                     </div>
                   </div>
                 );
@@ -2519,6 +2619,14 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
             </form>
           </div>
         </div>
+      )}
+
+      {/* Profile Modal if viewing user in main messages hub */}
+      {viewingUserProfile && (
+        <PublicProfileModal
+          user={viewingUserProfile}
+          onClose={() => setViewingUserProfile(null)}
+        />
       )}
 
     </div>
