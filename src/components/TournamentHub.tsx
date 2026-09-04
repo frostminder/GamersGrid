@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   Trophy, Users, Shield, Play, Plus, Search, CheckCircle2, AlertTriangle, 
-  Scan, Upload, Shuffle, ChevronRight, Lock, Key, Coins, Info, X, Ban, Sparkles
+  Scan, Upload, Shuffle, ChevronRight, Lock, Key, Coins, Info, X, Ban, Sparkles, ArrowLeft
 } from 'lucide-react';
 import { Tournament, TournamentPlayer, TournamentMatch, CURRENT_USER, WalletState } from '../types/mockData';
 
@@ -10,6 +10,7 @@ interface TournamentHubProps {
   wallet: WalletState;
   onJoinTournament: (tournamentId: string, ign: string, uid: string, screenshotUrl: string) => void;
   onOpenWallet: () => void;
+  onBack?: () => void;
 }
 
 export const TournamentHub: React.FC<TournamentHubProps> = ({
@@ -17,6 +18,7 @@ export const TournamentHub: React.FC<TournamentHubProps> = ({
   wallet,
   onJoinTournament,
   onOpenWallet,
+  onBack,
 }) => {
   const [selectedTournament, setSelectedTournament] = useState<Tournament>(tournaments[0]);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
@@ -165,9 +167,20 @@ export const TournamentHub: React.FC<TournamentHubProps> = ({
       {/* 1. Header Banner: Esports Tournaments Hub */}
       <div className="relative rounded-2xl overflow-hidden bg-gradient-to-r from-[#5003BD] via-[#350280] to-[#121212] p-5 sm:p-6 border border-[#7A22EC]/40 shadow-xl">
         <div className="relative z-10 max-w-xl space-y-2">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 backdrop-blur-md text-amber-300 text-xs font-bold border border-amber-300/30">
-            <Trophy className="w-3.5 h-3.5" />
-            <span>Community Esports & Wagers</span>
+          <div className="flex items-center gap-2">
+            {onBack && (
+              <button
+                onClick={onBack}
+                className="p-1 rounded-lg bg-black/40 hover:bg-black/60 text-white transition-colors cursor-pointer border border-white/10"
+                title="Go back"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+            )}
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 backdrop-blur-md text-amber-300 text-xs font-bold border border-amber-300/30">
+              <Trophy className="w-3.5 h-3.5" />
+              <span>Community Esports & Wagers</span>
+            </div>
           </div>
           <h1 className="font-gaming text-2xl sm:text-3xl font-extrabold text-white tracking-wide uppercase">
             Official Tournament Engine

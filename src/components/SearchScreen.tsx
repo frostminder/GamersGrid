@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Search, User, Plus, Check } from 'lucide-react';
+import { Search, User, Plus, Check, ArrowLeft } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
 import { searchUsers, followUser, unfollowUser, getIsFollowing, UserProfile } from '../lib/userService';
 import { PublicProfileModal } from './PublicProfileModal';
 import { getCountryFlag } from '../data/countries';
 
-export const SearchScreen = () => {
+export const SearchScreen: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
   const [query, setQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'users' | 'posts'>('users');
   const [results, setResults] = useState<UserProfile[]>([]);
@@ -58,7 +58,18 @@ export const SearchScreen = () => {
   return (
     <div className="flex-1 w-full flex flex-col h-full bg-[#121212] pt-0 px-0 pb-16 animate-in fade-in overflow-hidden">
       <div className="sticky top-0 z-10 bg-[#121212] pb-2 pt-0">
-        <h1 className="text-xl font-bold text-white mb-2">Search</h1>
+        <div className="flex items-center gap-3 mb-2">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="p-1.5 rounded-lg bg-[#27272a] hover:bg-[#3f3f46] text-[#e4e4e7] transition-colors cursor-pointer"
+              title="Go back"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+          )}
+          <h1 className="text-xl font-bold text-white">Search</h1>
+        </div>
         
         <div className="relative flex items-center mb-3">
           <div className="absolute left-3.5 text-[#777777] pointer-events-none">

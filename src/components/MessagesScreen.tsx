@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   MessageSquare, Users, Globe, Search, Plus, Send, X, 
   Check, ArrowLeft, UserCheck, ChevronRight, Hash, 
-  UserPlus, Reply, Trash2, Ban, Pencil
+  UserPlus, Reply, Trash2, Ban, Pencil, Copy
 } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
 import { 
@@ -209,8 +209,10 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
     isLongPressed.current = false;
     clearTimer();
 
-    // Start long-press detection if not already in selection mode
-    if (!isSelectionMode) {
+    const isTextContent = !!(e.target as HTMLElement).closest('.message-text-content');
+
+    // Start long-press detection if not already in selection mode and not interacting with native text
+    if (!isSelectionMode && !isTextContent) {
       longPressTimer.current = setTimeout(() => {
         isLongPressed.current = true;
         try {
@@ -290,7 +292,9 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
     hasMoved.current = false;
     isLongPressed.current = false;
 
-    if (!isSelectionMode) {
+    const isTextContent = !!(e.target as HTMLElement).closest('.message-text-content');
+
+    if (!isSelectionMode && !isTextContent) {
       longPressTimer.current = setTimeout(() => {
         isLongPressed.current = true;
         onToggleSelect(msg);
@@ -314,6 +318,11 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
+    const isTextContent = !!(e.target as HTMLElement).closest('.message-text-content');
+    if (isTextContent) {
+      // Allow native context menu to appear for text selection options
+      return;
+    }
     e.preventDefault();
     onToggleSelect(msg);
   };
@@ -438,7 +447,7 @@ const SwipeableMessageRow: React.FC<SwipeableMessageRowProps> = ({
               <span>{msg.isMe ? 'You deleted this message' : 'This message was deleted'}</span>
             </div>
           ) : (
-            <p className="break-words [overflow-wrap:anywhere] [word-break:break-word] whitespace-pre-wrap select-text text-sm leading-snug">
+            <p className="message-text-content break-words [overflow-wrap:anywhere] [word-break:break-word] whitespace-pre-wrap select-text text-sm leading-snug">
               {msg.text}
             </p>
           )}
@@ -554,14 +563,23 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
     }
   };
 
-  // Notify parent of active chat status so header/bottom-nav can hide
+  // Notify parent of active chat status and handle browser/hardware back button
   useEffect(() => {
     const isChatActive = !!(activeChatGamer || activeGroup || activeCommunity);
     onChatActiveChange?.(isChatActive);
-    return () => {
-      onChatActiveChange?.(false);
-    };
-  }, [activeChatGamer, activeGroup, activeCommunity, onChatActiveChange]);
+
+    if (isChatActive) {
+      window.history.pushState({ screen: 'chat' }, '');
+      const handleChatPop = () => {
+        handleBackToHub();
+      };
+      window.addEventListener('popstate', handleChatPop);
+      return () => {
+        window.removeEventListener('popstate', handleChatPop);
+        onChatActiveChange?.(false);
+      };
+    }
+  }, [activeChatGamer, activeGroup, activeCommunity]);
 
   // Search & New Chat Modal
   const [showNewChatModal, setShowNewChatModal] = useState(false);
@@ -1525,6 +1543,24 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
                 );
               })()}
 
+              {/* Copy button */}
+              <button
+                onClick={() => {
+                  const selectedList = currentMessages
+                    .filter((m) => selectedMessageIds.has(m.id) && !m.isDeleted)
+                    .map(m => m.text)
+                    .join('\n');
+                  if (selectedList) {
+                    navigator.clipboard.writeText(selectedList).catch(() => {});
+                  }
+                  setSelectedMessageIds(new Set());
+                }}
+                className="p-2 rounded-xl bg-black/30 hover:bg-black/50 text-white transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+                title="Copy selected messages"
+              >
+                <Copy className="w-5 h-5" />
+              </button>
+
               {/* Dustbin / Trash icon at top as requested */}
               <button
                 onClick={() => setShowDeleteModal(true)}
@@ -1539,7 +1575,13 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
           <div className="px-4 py-3 bg-[#18181b] border-b border-[#2a2a2e] flex items-center justify-between shrink-0 shadow-md">
             <div className="flex items-center gap-3">
               <button 
-                onClick={handleBackToHub}
+                onClick={() => {
+                  if (window.history.state?.screen === 'chat') {
+                    window.history.back();
+                  } else {
+                    handleBackToHub();
+                  }
+                }}
                 className="p-2 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-white transition-colors cursor-pointer"
                 title="Back to messages"
               >
@@ -1590,13 +1632,6 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
               >
                 <div className="flex items-center gap-2">
                   <h3 className="font-bold text-white text-sm sm:text-base leading-none">{title}</h3>
-                  {/* Status dot beside name */}
-                  {activeChatGamer && statusConfig && (
-                    <span 
-                      className={`w-2 h-2 rounded-full ${statusConfig.bg} ${statusConfig.glow} inline-block shrink-0`}
-                      title={statusConfig.label}
-                    />
-                  )}
                 </div>
                 <div className="flex items-center gap-1.5 mt-1 text-xs text-[#71717a]">
                   <span className="truncate max-w-[200px] sm:max-w-xs">{subtitle}</span>
@@ -1958,16 +1993,11 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
                     />
                   </div>
 
-                  {/* Name with inline status dot (NO status text under the user) */}
-                  <div className="flex items-center gap-1.5 max-w-[80px] justify-center">
+                  {/* Name (NO status text under the user, dot only on profile avatar) */}
+                  <div className="flex items-center justify-center max-w-[80px]">
                     <span className="text-xs font-semibold text-white group-hover:text-purple-300 truncate transition-colors text-center">
                       {gamer.gamertag}
                     </span>
-                    {/* Dot beside name */}
-                    <span 
-                      className={`w-1.5 h-1.5 rounded-full ${status.bg} ${status.glow} inline-block shrink-0`}
-                      title={status.label}
-                    />
                   </div>
                 </button>
               );
@@ -2157,11 +2187,6 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
                           <span className="font-bold text-white text-sm group-hover:text-purple-300 transition-colors truncate">
                             {partner.name || partner.gamertag}
                           </span>
-                          {/* Status dot beside name */}
-                          <span 
-                            className={`w-2 h-2 rounded-full ${status.bg} ${status.glow} inline-block shrink-0`}
-                            title={status.label}
-                          />
                           <span className="text-[11px] text-[#71717a] truncate">
                             @{partner.gamertag}
                           </span>
@@ -2428,10 +2453,6 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
                         <div>
                           <div className="flex items-center gap-1.5">
                             <span className="text-sm font-bold text-white">{user.name || user.gamertag}</span>
-                            <span 
-                              className={`w-1.5 h-1.5 rounded-full ${status.bg}`} 
-                              title={status.label}
-                            />
                           </div>
                           <span className="text-xs text-[#71717a]">@{user.gamertag}</span>
                         </div>

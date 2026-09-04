@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Heart, UserPlus, MessageCircle, Check, CheckCheck } from 'lucide-react';
+import { Bell, Heart, UserPlus, MessageCircle, Check, CheckCheck, ArrowLeft } from 'lucide-react';
 import { db, auth } from '../lib/firebase';
 import { collection, query, where, orderBy, getDocs, updateDoc, doc, getDoc, writeBatch, onSnapshot } from 'firebase/firestore';
 import { UserProfile } from '../lib/userService';
@@ -48,7 +48,7 @@ const formatNotificationTime = (timestamp: any): string => {
   }
 };
 
-export const NotificationsScreen = () => {
+export const NotificationsScreen: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -136,11 +136,22 @@ export const NotificationsScreen = () => {
   return (
     <div className="flex-1 w-full flex flex-col h-full bg-[#121212] pt-0 px-0 pb-16 animate-in fade-in">
       <div className="sticky top-0 z-10 bg-[#121212] pb-2 pt-0 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl font-bold text-white">Notifications</h1>
-          {unreadCount > 0 && (
-            <span className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
+        <div className="flex items-center gap-3">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="p-1.5 rounded-lg bg-[#27272a] hover:bg-[#3f3f46] text-[#e4e4e7] transition-colors cursor-pointer"
+              title="Go back"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
           )}
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold text-white">Notifications</h1>
+            {unreadCount > 0 && (
+              <span className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
+            )}
+          </div>
         </div>
         {unreadCount > 0 && (
           <button

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Plus, MessageSquare, Settings as SettingsIcon, Users, LogOut, ChevronRight } from 'lucide-react';
+import { Search, Plus, MessageSquare, Settings as SettingsIcon, Users, LogOut, ChevronRight, ArrowLeft } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { signOut } from 'firebase/auth';
 
@@ -33,7 +33,17 @@ export const MessagesMockup = () => (
   </div>
 );
 
-export const SettingsMockup = ({ onSignOut, onAddAccount, onSwitchAccount }: { onSignOut: () => void, onAddAccount: () => void, onSwitchAccount: (email: string) => void }) => {
+export const SettingsMockup = ({ 
+  onSignOut, 
+  onAddAccount, 
+  onSwitchAccount,
+  onBack 
+}: { 
+  onSignOut: () => void, 
+  onAddAccount: () => void, 
+  onSwitchAccount: (email: string) => void,
+  onBack?: () => void 
+}) => {
   const savedAccounts = React.useMemo(() => {
     try {
       return JSON.parse(localStorage.getItem('gamersgrid_accounts') || '[]');
@@ -46,7 +56,16 @@ export const SettingsMockup = ({ onSignOut, onAddAccount, onSwitchAccount }: { o
 
   return (
     <div className="w-full flex flex-col gap-4 animate-in fade-in duration-300 pb-20 pt-0 px-0">
-      <div className="flex items-center justify-between mb-1">
+      <div className="flex items-center gap-3 mb-1">
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="p-1.5 rounded-lg bg-[#27272a] hover:bg-[#3f3f46] text-[#e4e4e7] transition-colors cursor-pointer"
+            title="Back to profile"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+        )}
         <h1 className="text-xl font-bold text-white">Settings</h1>
       </div>
 

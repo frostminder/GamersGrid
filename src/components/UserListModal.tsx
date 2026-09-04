@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, ArrowLeft } from 'lucide-react';
 import { UserProfile, getIsFollowing, followUser, unfollowUser } from '../lib/userService';
 import { auth } from '../lib/firebase';
 import { getCountryFlag } from '../data/countries';
@@ -13,6 +13,26 @@ interface UserListModalProps {
 
 export const UserListModal: React.FC<UserListModalProps> = ({ title, users, onClose, onUserClick }) => {
   const [followingMap, setFollowingMap] = useState<Record<string, boolean>>({});
+
+  // Handle hardware / browser back button to close modal without exiting app
+  useEffect(() => {
+    window.history.pushState({ modal: 'user-list' }, '');
+    const handlePopState = () => {
+      onClose();
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [onClose]);
+
+  const handleClose = () => {
+    if (window.history.state?.modal === 'user-list') {
+      window.history.back();
+    } else {
+      onClose();
+    }
+  };
 
   useEffect(() => {
     const fetchStatuses = async () => {
@@ -48,8 +68,21 @@ export const UserListModal: React.FC<UserListModalProps> = ({ title, users, onCl
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#121212]">
       <div className="bg-[#121212] w-full h-full flex flex-col animate-in slide-in-from-bottom-8">
         <div className="flex items-center justify-between p-4 border-b border-[#2a2a2e]">
-          <h2 className="text-lg font-bold text-white">{title}</h2>
-          <button onClick={onClose} className="p-2 bg-[#2a2a2e] rounded-full text-[#999999] hover:text-white transition-colors">
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={handleClose} 
+              className="p-1.5 bg-[#2a2a2e] rounded-full text-[#999999] hover:text-white transition-colors cursor-pointer"
+              title="Back"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <h2 className="text-lg font-bold text-white">{title}</h2>
+          </div>
+          <button 
+            onClick={handleClose} 
+            className="p-2 bg-[#2a2a2e] rounded-full text-[#999999] hover:text-white transition-colors cursor-pointer"
+            title="Close"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>

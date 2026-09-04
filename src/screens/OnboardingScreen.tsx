@@ -282,7 +282,7 @@ export const OnboardingScreen: React.FC = () => {
           // non-blocking
         }
 
-        navigate('/home');
+        navigate('/home', { replace: true });
       } catch (err: any) {
         console.error('Error saving profile:', err);
         setErrorMsg(err?.message ? `Failed to save profile: ${err.message}` : 'Failed to save profile. Please try again.');

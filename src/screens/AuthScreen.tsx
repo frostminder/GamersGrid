@@ -26,9 +26,9 @@ export const AuthScreen: React.FC = () => {
         try {
           const userDoc = await getDoc(doc(db, 'users', user.uid));
           if (userDoc.exists()) {
-            navigate('/home');
+            navigate('/home', { replace: true });
           } else {
-            navigate('/onboarding');
+            navigate('/onboarding', { replace: true });
           }
         } catch (err) {
           console.error('Error checking user profile:', err);

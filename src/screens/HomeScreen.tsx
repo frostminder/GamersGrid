@@ -5,7 +5,7 @@ import { usePWAInstall } from '../hooks/usePWAInstall';
 import { auth, db } from '../lib/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { doc, onSnapshot, collection, query, where } from 'firebase/firestore';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ProfileTab } from '../components/ProfileTab';
 import { TournamentHub } from '../components/TournamentHub';
 import { CreateMockup, SettingsMockup } from '../components/MockupScreens';
@@ -21,15 +21,21 @@ export const HomeScreen: React.FC = () => {
   const [logoError, setLogoError] = React.useState(false);
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState('home');
   const [isChatActive, setIsChatActive] = useState(false);
   const [dismissInstall, setDismissInstall] = useState(false);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState<number>(0);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const activeTab = searchParams.get('tab') || 'home';
 
   const handleTabChange = (tab: string) => {
-    setActiveTab(tab);
+    if (tab === activeTab) return;
+    if (tab === 'home') {
+      navigate('/home');
+    } else {
+      navigate(`/home?tab=${tab}`);
+    }
     setIsChatActive(false);
   };
 
@@ -41,7 +47,7 @@ export const HomeScreen: React.FC = () => {
     
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (!currentUser) {
-        navigate("/auth");
+        navigate("/auth", { replace: true });
         setUserProfile(null);
         setUnreadNotificationsCount(0);
         setUnreadMessagesCount(0);
@@ -156,7 +162,7 @@ export const HomeScreen: React.FC = () => {
           <div className="flex items-center gap-4">
             {/* Notification Bell */}
             <button 
-              onClick={() => setActiveTab('notifications')}
+              onClick={() => handleTabChange('notifications')}
               className={`relative p-2 rounded-full transition-colors group ${activeTab === 'notifications' ? 'bg-[#2a2a2e]' : 'hover:bg-[#2a2a2e]'}`}
               title={unreadNotificationsCount > 0 ? `${unreadNotificationsCount} unread notification${unreadNotificationsCount > 1 ? 's' : ''}` : 'Notifications'}
             >
@@ -168,7 +174,7 @@ export const HomeScreen: React.FC = () => {
             
             {/* User Avatar */}
             <div 
-              onClick={() => setActiveTab('profile')}
+              onClick={() => handleTabChange('profile')}
               className="h-9 w-9 rounded-full bg-gradient-to-tr bg-[#5003BD] p-[2px] cursor-pointer hover:scale-105 transition-transform"
             >
               <div className="w-full h-full rounded-full bg-[#1a1a1a] flex items-center justify-center overflow-hidden">
@@ -201,20 +207,26 @@ export const HomeScreen: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-[#1a1a1a] border border-[#2a2a2e] rounded-2xl p-6 flex flex-col items-start justify-center min-h-[180px] hover:border-[#5003BD] hover:bg-[#1c1c20] transition-all cursor-pointer group shadow-lg">
+              <div 
+                onClick={() => handleTabChange('tournaments')}
+                className="bg-[#1a1a1a] border border-[#2a2a2e] rounded-2xl p-6 flex flex-col items-start justify-center min-h-[180px] hover:border-[#5003BD] hover:bg-[#1c1c20] transition-all cursor-pointer group shadow-lg"
+              >
                 <div className="p-3 bg-[#121212] rounded-xl mb-4 group-hover:scale-110 transition-transform duration-300">
                   <LayoutDashboard className="w-8 h-8 text-[#5003BD]" />
                 </div>
-                <h2 className="text-xl font-bold">Dashboard</h2>
-                <p className="text-sm text-[#777777] mt-1">View your stats and current standing.</p>
+                <h2 className="text-xl font-bold">Tournaments Hub</h2>
+                <p className="text-sm text-[#777777] mt-1">Join open lobbies and track brackets.</p>
               </div>
 
-              <div className="bg-[#1a1a1a] border border-[#2a2a2e] rounded-2xl p-6 flex flex-col items-start justify-center min-h-[180px] hover:border-[#5003BD] hover:bg-[#1c1c20] transition-all cursor-pointer group shadow-lg">
+              <div 
+                onClick={() => handleTabChange('messages')}
+                className="bg-[#1a1a1a] border border-[#2a2a2e] rounded-2xl p-6 flex flex-col items-start justify-center min-h-[180px] hover:border-[#5003BD] hover:bg-[#1c1c20] transition-all cursor-pointer group shadow-lg"
+              >
                 <div className="p-3 bg-[#121212] rounded-xl mb-4 group-hover:scale-110 transition-transform duration-300">
-                  <Users className="w-8 h-8 text-[#5003BD]" />
+                  <MessageSquare className="w-8 h-8 text-[#5003BD]" />
                 </div>
-                <h2 className="text-xl font-bold">Tournaments</h2>
-                <p className="text-sm text-[#777777] mt-1">Join open lobbies and track brackets.</p>
+                <h2 className="text-xl font-bold">Community Messages</h2>
+                <p className="text-sm text-[#777777] mt-1">Direct messaging, squads, and groups.</p>
               </div>
             </div>
           </>
@@ -226,15 +238,16 @@ export const HomeScreen: React.FC = () => {
             wallet={INITIAL_WALLET} 
             onJoinTournament={() => {}} 
             onOpenWallet={() => {}} 
+            onBack={() => handleTabChange('home')}
           />
         )}
 
         {activeTab === 'search' && (
-          <SearchScreen />
+          <SearchScreen onBack={() => handleTabChange('home')} />
         )}
 
         {activeTab === 'notifications' && (
-          <NotificationsScreen />
+          <NotificationsScreen onBack={() => handleTabChange('home')} />
         )}
         {activeTab === 'create' && (
           <CreateMockup />
@@ -245,22 +258,23 @@ export const HomeScreen: React.FC = () => {
         )}
 
         {activeTab === 'profile' && (
-          <ProfileTab onNavigate={(tab) => setActiveTab(tab)} />
+          <ProfileTab onNavigate={(tab) => handleTabChange(tab)} />
         )}
 
         {activeTab === 'settings' && (
           <SettingsMockup 
+            onBack={() => handleTabChange('profile')}
             onSignOut={async () => {
               await auth.signOut();
-              navigate('/auth');
+              navigate('/auth', { replace: true });
             }} 
             onAddAccount={async () => {
               await auth.signOut();
-              navigate('/auth');
+              navigate('/auth', { replace: true });
             }}
             onSwitchAccount={async (email) => {
               await auth.signOut();
-              navigate('/auth', { state: { prefillEmail: email } });
+              navigate('/auth', { replace: true, state: { prefillEmail: email } });
             }}
           />
         )}
