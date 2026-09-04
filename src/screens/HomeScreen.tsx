@@ -8,9 +8,11 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { ProfileTab } from '../components/ProfileTab';
 import { TournamentHub } from '../components/TournamentHub';
-import { CreateMockup, MessagesMockup, SettingsMockup } from '../components/MockupScreens';
+import { CreateMockup, SettingsMockup } from '../components/MockupScreens';
+import { MessagesScreen } from '../components/MessagesScreen';
 import { SearchScreen } from '../components/SearchScreen';
 import { NotificationsScreen } from '../components/NotificationsScreen';
+import { startPresenceTracking } from '../lib/presenceService';
 import { MOCK_TOURNAMENTS, INITIAL_WALLET } from '../types/mockData';
 
 export const HomeScreen: React.FC = () => {
@@ -25,12 +27,20 @@ export const HomeScreen: React.FC = () => {
 
   useEffect(() => {
     let unsubscribeSnapshot: () => void;
+    let stopPresence: (() => void) | undefined;
     
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (!currentUser) {
         navigate("/auth");
         setUserProfile(null);
+        if (stopPresence) {
+          stopPresence();
+          stopPresence = undefined;
+        }
       } else {
+        if (!stopPresence) {
+          stopPresence = startPresenceTracking(currentUser.uid);
+        }
         unsubscribeSnapshot = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
@@ -64,6 +74,7 @@ export const HomeScreen: React.FC = () => {
     return () => {
       unsubscribe();
       if (unsubscribeSnapshot) unsubscribeSnapshot();
+      if (stopPresence) stopPresence();
     };
   }, []);
 
@@ -171,7 +182,7 @@ export const HomeScreen: React.FC = () => {
         )}
 
         {activeTab === 'messages' && (
-          <MessagesMockup />
+          <MessagesScreen />
         )}
 
         {activeTab === 'profile' && (

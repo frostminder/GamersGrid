@@ -74,5 +74,35 @@ service cloud.firestore {
         && incoming().read is bool;
       allow delete: if isAdmin() || (isSignedIn() && isValidId(notificationId) && existing().userId == request.auth.uid);
     }
+
+    match /presence/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /chats/{chatId} {
+      allow read, write: if isSignedIn();
+      match /messages/{messageId} {
+        allow read, write: if isSignedIn();
+      }
+    }
+
+    match /groups/{groupId} {
+      allow read, write: if isSignedIn();
+      match /messages/{messageId} {
+        allow read, write: if isSignedIn();
+      }
+    }
+
+    match /communities/{communityId} {
+      allow read, write: if isSignedIn();
+      match /messages/{messageId} {
+        allow read, write: if isSignedIn();
+      }
+    }
+
+    match /messages/{messageId} {
+      allow read, write: if isSignedIn();
+    }
   }
 }
