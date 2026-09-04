@@ -22,8 +22,14 @@ export const HomeScreen: React.FC = () => {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [activeTab, setActiveTab] = useState('home');
+  const [isChatActive, setIsChatActive] = useState(false);
   const [dismissInstall, setDismissInstall] = useState(false);
   const navigate = useNavigate();
+
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+    setIsChatActive(false);
+  };
 
   useEffect(() => {
     let unsubscribeSnapshot: () => void;
@@ -79,9 +85,9 @@ export const HomeScreen: React.FC = () => {
   }, []);
 
   return (
-    <div className="min-h-screen w-full bg-[#121212] text-white flex flex-col items-center pb-24">
+    <div className={`min-h-screen w-full bg-[#121212] text-white flex flex-col items-center ${isChatActive ? 'pb-0' : 'pb-24'}`}>
       {/* Premium Top Navigation */}
-      {activeTab !== 'profile' && (
+      {(!isChatActive && activeTab !== 'profile') && (
         <header className="w-full bg-[#121212]/80 backdrop-blur-xl border-b border-[#2a2a2e] px-4 py-3 flex items-center justify-between sticky top-0 z-50">
           <div className="flex items-center gap-3">
             {!logoError ? (
@@ -125,7 +131,7 @@ export const HomeScreen: React.FC = () => {
       )}
 
       {/* Main Content Area */}
-      <main className={`flex-1 w-full flex flex-col ${activeTab === 'profile' ? 'p-0 gap-0 max-w-none' : 'max-w-4xl px-4 pt-3 pb-6 gap-4'}`}>
+      <main className={`flex-1 w-full flex flex-col ${isChatActive ? 'p-0 gap-0 max-w-none' : activeTab === 'profile' ? 'p-0 gap-0 max-w-none' : 'max-w-4xl px-4 pt-3 pb-6 gap-4'}`}>
         
         {activeTab === 'home' && (
           <>
@@ -182,7 +188,7 @@ export const HomeScreen: React.FC = () => {
         )}
 
         {activeTab === 'messages' && (
-          <MessagesScreen />
+          <MessagesScreen onChatActiveChange={(active) => setIsChatActive(active)} />
         )}
 
         {activeTab === 'profile' && (
@@ -271,33 +277,35 @@ export const HomeScreen: React.FC = () => {
       )}
 
       {/* Bottom Navigation Bar */}
-      <nav className="fixed bottom-0 w-full bg-[#888888]/10 backdrop-blur-2xl rounded-t-3xl border-t border-white/10 shadow-2xl flex items-center justify-evenly px-2 h-16 z-50">
-        {[
-          { id: 'home', icon: Home },
-          { id: 'search', icon: Search },
-          { id: 'create', icon: Plus },
-          { id: 'messages', icon: MessageSquare },
-          { id: 'tournaments', icon: Trophy }
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className="relative flex items-center justify-center w-12 h-12 rounded-full transition-all duration-300"
-            >
-              {isActive && (
-                <div className="absolute inset-0 bg-[#5003BD] rounded-full shadow-[0_0_15px_rgba(80,3,189,0.5)]"></div>
-              )}
-              <Icon 
-                className={`relative z-10 w-6 h-6 transition-colors ${isActive ? 'text-white' : 'text-[#aaaaaa] hover:text-white'}`} 
-                strokeWidth={isActive ? 2.5 : 2} 
-              />
-            </button>
-          );
-        })}
-      </nav>
+      {!isChatActive && (
+        <nav className="fixed bottom-0 w-full bg-[#888888]/10 backdrop-blur-2xl rounded-t-3xl border-t border-white/10 shadow-2xl flex items-center justify-evenly px-2 h-16 z-50">
+          {[
+            { id: 'home', icon: Home },
+            { id: 'search', icon: Search },
+            { id: 'create', icon: Plus },
+            { id: 'messages', icon: MessageSquare },
+            { id: 'tournaments', icon: Trophy }
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => handleTabChange(tab.id)}
+                className="relative flex items-center justify-center w-12 h-12 rounded-full transition-all duration-300"
+              >
+                {isActive && (
+                  <div className="absolute inset-0 bg-[#5003BD] rounded-full shadow-[0_0_15px_rgba(80,3,189,0.5)]"></div>
+                )}
+                <Icon 
+                  className={`relative z-10 w-6 h-6 transition-colors ${isActive ? 'text-white' : 'text-[#aaaaaa] hover:text-white'}`} 
+                  strokeWidth={isActive ? 2.5 : 2} 
+                />
+              </button>
+            );
+          })}
+        </nav>
+      )}
 
       {/* iOS Guide Modal */}
       {showIOSGuide && (

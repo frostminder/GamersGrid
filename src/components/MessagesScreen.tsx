@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   MessageSquare, Users, Globe, Search, Plus, Send, X, 
-  CheckCheck, ArrowLeft, UserCheck, ChevronRight, Hash, 
+  Check, CheckCheck, ArrowLeft, UserCheck, ChevronRight, Hash, 
   UserPlus
 } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
@@ -10,6 +10,7 @@ import {
   doc, 
   setDoc, 
   addDoc, 
+  updateDoc,
   getDoc,
   getDocs,
   query, 
@@ -36,6 +37,9 @@ interface ChatMessage {
   text: string;
   createdAt: any;
   isMe: boolean;
+  read?: boolean;
+  readAt?: any;
+  delivered?: boolean;
 }
 
 interface FirestoreChat {
@@ -51,6 +55,7 @@ interface FirestoreChat {
   lastMessageSenderName?: string;
   lastMessageTime?: any;
   updatedAt?: any;
+  typing?: Record<string, number>;
 }
 
 interface FirestoreGroup {
@@ -79,7 +84,11 @@ interface FirestoreCommunity {
   createdAt?: any;
 }
 
-export const MessagesScreen: React.FC = () => {
+export interface MessagesScreenProps {
+  onChatActiveChange?: (active: boolean) => void;
+}
+
+export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChange }) => {
   const [activeTab, setActiveTab] = useState<'inbox' | 'groups' | 'community'>('inbox');
   const [mutuals, setMutuals] = useState<MutualGamer[]>([]);
   const [presences, setPresences] = useState<Record<string, PresenceStatus>>({});
@@ -96,10 +105,21 @@ export const MessagesScreen: React.FC = () => {
   const [activeGroup, setActiveGroup] = useState<FirestoreGroup | null>(null);
   const [activeCommunity, setActiveCommunity] = useState<FirestoreCommunity | null>(null);
   const [currentMessages, setCurrentMessages] = useState<ChatMessage[]>([]);
+  const [partnerTyping, setPartnerTyping] = useState(false);
+  const lastTypingPing = useRef<number>(0);
   
   const [messageInput, setMessageInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Notify parent of active chat status so header/bottom-nav can hide
+  useEffect(() => {
+    const isChatActive = !!(activeChatGamer || activeGroup || activeCommunity);
+    onChatActiveChange?.(isChatActive);
+    return () => {
+      onChatActiveChange?.(false);
+    };
+  }, [activeChatGamer, activeGroup, activeCommunity, onChatActiveChange]);
 
   // Search & New Chat Modal
   const [showNewChatModal, setShowNewChatModal] = useState(false);
@@ -213,9 +233,10 @@ export const MessagesScreen: React.FC = () => {
     return () => unsubscribe();
   }, [currentUser?.uid]);
 
-  // 5. Subscribe to Active Chat Messages
+  // 5. Subscribe to Active Chat Messages & Real-Time Read Receipts
   useEffect(() => {
     let messagesUnsub = () => {};
+    let chatDocUnsub = () => {};
 
     if (activeChatId) {
       // 1-on-1 direct chat
@@ -225,6 +246,17 @@ export const MessagesScreen: React.FC = () => {
         const msgs: ChatMessage[] = [];
         snapshot.forEach((docSnap) => {
           const data = docSnap.data();
+          const isFromPartner = data.senderId !== currentUser?.uid;
+          
+          // Mark incoming message as read when in active chat
+          if (isFromPartner && !data.read) {
+            updateDoc(doc(db, 'chats', activeChatId, 'messages', docSnap.id), {
+              read: true,
+              delivered: true,
+              readAt: serverTimestamp(),
+            }).catch((err) => console.error('Error marking read:', err));
+          }
+
           msgs.push({
             id: docSnap.id,
             senderId: data.senderId,
@@ -233,9 +265,28 @@ export const MessagesScreen: React.FC = () => {
             text: data.text,
             createdAt: data.createdAt,
             isMe: data.senderId === currentUser?.uid,
+            read: data.read ?? false,
+            readAt: data.readAt,
+            delivered: data.delivered ?? false,
           });
         });
         setCurrentMessages(msgs);
+      });
+
+      // Typing status listener for direct chat
+      chatDocUnsub = onSnapshot(doc(db, 'chats', activeChatId), (snap) => {
+        if (snap.exists() && activeChatGamer) {
+          const data = snap.data();
+          const typingMap = data.typing || {};
+          const partnerTimestamp = typingMap[activeChatGamer.uid];
+          if (partnerTimestamp && Date.now() - partnerTimestamp < 4000) {
+            setPartnerTyping(true);
+          } else {
+            setPartnerTyping(false);
+          }
+        } else {
+          setPartnerTyping(false);
+        }
       });
     } else if (activeGroup) {
       // Group chat
@@ -253,10 +304,14 @@ export const MessagesScreen: React.FC = () => {
             text: data.text,
             createdAt: data.createdAt,
             isMe: data.senderId === currentUser?.uid,
+            read: data.read ?? false,
+            readAt: data.readAt,
+            delivered: data.delivered ?? false,
           });
         });
         setCurrentMessages(msgs);
       });
+      setPartnerTyping(false);
     } else if (activeCommunity) {
       // Community channel
       const messagesRef = collection(db, 'communities', activeCommunity.id, 'messages');
@@ -273,16 +328,24 @@ export const MessagesScreen: React.FC = () => {
             text: data.text,
             createdAt: data.createdAt,
             isMe: data.senderId === currentUser?.uid,
+            read: data.read ?? false,
+            readAt: data.readAt,
+            delivered: data.delivered ?? false,
           });
         });
         setCurrentMessages(msgs);
       });
+      setPartnerTyping(false);
     } else {
       setCurrentMessages([]);
+      setPartnerTyping(false);
     }
 
-    return () => messagesUnsub();
-  }, [activeChatId, activeGroup?.id, activeCommunity?.id, currentUser?.uid]);
+    return () => {
+      messagesUnsub();
+      chatDocUnsub();
+    };
+  }, [activeChatId, activeGroup?.id, activeCommunity?.id, currentUser?.uid, activeChatGamer?.uid]);
 
   // Scroll to bottom when messages update
   useEffect(() => {
@@ -351,6 +414,83 @@ export const MessagesScreen: React.FC = () => {
     setShowNewChatModal(false);
   };
 
+  // Handle Typing status update
+  const handleMessageInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const text = e.target.value;
+    setMessageInput(text);
+
+    if (activeChatId && currentUser) {
+      const now = Date.now();
+      if (now - lastTypingPing.current > 2000) {
+        lastTypingPing.current = now;
+        setDoc(doc(db, 'chats', activeChatId), {
+          typing: {
+            [currentUser.uid]: now,
+          }
+        }, { merge: true }).catch(() => {});
+      }
+    }
+  };
+
+  // Close active chat and return to hub
+  const handleBackToHub = () => {
+    if (activeChatId && currentUser) {
+      setDoc(doc(db, 'chats', activeChatId), {
+        typing: {
+          [currentUser.uid]: 0,
+        }
+      }, { merge: true }).catch(() => {});
+    }
+    setActiveChatGamer(null);
+    setActiveChatId(null);
+    setActiveGroup(null);
+    setActiveCommunity(null);
+    setPartnerTyping(false);
+    onChatActiveChange?.(false);
+  };
+
+  // Render WhatsApp-style message ticks:
+  // 1 tick: sent (recipient is offline)
+  // 2 ticks: user is online or standby (delivered)
+  // Blue tick: message read
+  const renderMessageTicks = (msg: ChatMessage) => {
+    if (!msg.isMe) return null;
+
+    // 1. Blue double check: Message has been read
+    if (msg.read) {
+      return (
+        <CheckCheck 
+          className="w-3.5 h-3.5 text-[#00a3ff] drop-shadow-[0_0_5px_rgba(0,163,255,0.7)] shrink-0" 
+          strokeWidth={2.5} 
+          title="Read"
+        />
+      );
+    }
+
+    // 2. Double check (grey/white): Recipient is online or in standby (background), or message marked delivered
+    const partnerStatus = activeChatGamer ? (presences[activeChatGamer.uid] || 'offline') : 'offline';
+    const isOnlineOrStandby = msg.delivered || partnerStatus === 'online' || partnerStatus === 'background';
+
+    if (isOnlineOrStandby) {
+      return (
+        <CheckCheck 
+          className="w-3.5 h-3.5 text-zinc-300 shrink-0" 
+          strokeWidth={2} 
+          title="Delivered (User online/standby)"
+        />
+      );
+    }
+
+    // 3. Single check (grey): Sent, but recipient is offline (app closed / not running)
+    return (
+      <Check 
+        className="w-3.5 h-3.5 text-zinc-400 shrink-0" 
+        strokeWidth={2} 
+        title="Sent (Offline)"
+      />
+    );
+  };
+
   // Send Message in active conversation
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -362,13 +502,18 @@ export const MessagesScreen: React.FC = () => {
 
     try {
       if (activeChatId) {
-        // Direct Chat
+        // Direct Chat: check partner presence for initial delivery status
+        const partnerStatus = activeChatGamer ? (presences[activeChatGamer.uid] || 'offline') : 'offline';
+        const isDelivered = partnerStatus === 'online' || partnerStatus === 'background';
+
         await addDoc(collection(db, 'chats', activeChatId, 'messages'), {
           senderId: currentUser.uid,
           senderName: currentUser.displayName || 'Gamer',
           senderAvatar: currentUser.photoURL || '',
           text,
           createdAt: serverTimestamp(),
+          read: false,
+          delivered: isDelivered,
         });
 
         await setDoc(doc(db, 'chats', activeChatId), {
@@ -376,6 +521,9 @@ export const MessagesScreen: React.FC = () => {
           lastMessageSenderId: currentUser.uid,
           lastMessageSenderName: currentUser.displayName || 'Gamer',
           updatedAt: serverTimestamp(),
+          typing: {
+            [currentUser.uid]: 0,
+          }
         }, { merge: true });
       } else if (activeGroup) {
         // Group Chat
@@ -385,6 +533,8 @@ export const MessagesScreen: React.FC = () => {
           senderAvatar: currentUser.photoURL || '',
           text,
           createdAt: serverTimestamp(),
+          read: false,
+          delivered: true,
         });
 
         await setDoc(doc(db, 'groups', activeGroup.id), {
@@ -400,6 +550,8 @@ export const MessagesScreen: React.FC = () => {
           senderAvatar: currentUser.photoURL || '',
           text,
           createdAt: serverTimestamp(),
+          read: false,
+          delivered: true,
         });
 
         await setDoc(doc(db, 'communities', activeCommunity.id), {
@@ -548,18 +700,14 @@ export const MessagesScreen: React.FC = () => {
     const statusConfig = activeChatGamer ? getStatusColor(activeChatGamer.uid) : null;
 
     return (
-      <div className="w-full flex flex-col h-[calc(100vh-140px)] bg-[#121212] rounded-2xl border border-[#2a2a2e] overflow-hidden animate-in fade-in duration-200">
-        {/* Chat Header */}
-        <div className="p-3.5 bg-[#18181b] border-b border-[#2a2a2e] flex items-center justify-between shrink-0">
+      <div className="fixed inset-0 z-[60] flex flex-col bg-[#121212] w-screen h-[100dvh] overflow-hidden animate-in fade-in duration-150">
+        {/* Chat Header (Edge to edge, full width) */}
+        <div className="px-4 py-3 bg-[#18181b] border-b border-[#2a2a2e] flex items-center justify-between shrink-0 shadow-md">
           <div className="flex items-center gap-3">
             <button 
-              onClick={() => {
-                setActiveChatGamer(null);
-                setActiveChatId(null);
-                setActiveGroup(null);
-                setActiveCommunity(null);
-              }}
-              className="p-1.5 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-white transition-colors cursor-pointer"
+              onClick={handleBackToHub}
+              className="p-2 rounded-xl bg-[#27272a] hover:bg-[#3f3f46] text-white transition-colors cursor-pointer"
+              title="Back to messages"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -614,7 +762,7 @@ export const MessagesScreen: React.FC = () => {
         </div>
 
         {/* Messages Stream */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3.5 hide-scrollbar">
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3.5 hide-scrollbar bg-[#121212]">
           {currentMessages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-6 text-[#71717a]">
               <MessageSquare className="w-10 h-10 text-[#5003BD] mb-2 opacity-80" />
@@ -633,18 +781,18 @@ export const MessagesScreen: React.FC = () => {
                   </span>
                 )}
                 <div 
-                  className={`max-w-[80%] sm:max-w-[70%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
+                  className={`max-w-[82%] sm:max-w-[70%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed ${
                     msg.isMe 
                       ? 'bg-[#5003BD] text-white rounded-br-xs shadow-md shadow-[#5003BD]/20' 
                       : 'bg-[#27272a] text-[#f4f4f5] rounded-bl-xs border border-[#3f3f46]/50'
                   }`}
                 >
                   <p className="break-words">{msg.text}</p>
-                  <div className={`text-[10px] mt-1 text-right flex items-center justify-end gap-1 ${
+                  <div className={`text-[10px] mt-1 text-right flex items-center justify-end gap-1.5 ${
                     msg.isMe ? 'text-purple-200' : 'text-[#71717a]'
                   }`}>
                     <span>{formatTime(msg.createdAt)}</span>
-                    {msg.isMe && <CheckCheck className="w-3 h-3 text-purple-200" />}
+                    {renderMessageTicks(msg)}
                   </div>
                 </div>
               </div>
@@ -653,19 +801,33 @@ export const MessagesScreen: React.FC = () => {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Message Input Box */}
-        <form onSubmit={handleSendMessage} className="p-3 bg-[#18181b] flex items-center gap-2 shrink-0">
+        {/* Real-Time Typing Indicator */}
+        {partnerTyping && activeChatGamer && (
+          <div className="px-4 py-1.5 bg-[#18181b]/80 border-t border-[#2a2a2e]/60 flex items-center gap-2 text-xs text-purple-300 animate-in fade-in shrink-0">
+            <span className="font-semibold text-zinc-300">
+              @{activeChatGamer.gamertag} is typing
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#a855f7] animate-bounce [animation-delay:-0.3s]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-[#a855f7] animate-bounce [animation-delay:-0.15s]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-[#a855f7] animate-bounce" />
+            </span>
+          </div>
+        )}
+
+        {/* Message Input Box (Bottom edge-to-edge, full screen) */}
+        <form onSubmit={handleSendMessage} className="p-3 bg-[#18181b] border-t border-[#2a2a2e] flex items-center gap-2 shrink-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <input
             type="text"
             value={messageInput}
-            onChange={(e) => setMessageInput(e.target.value)}
+            onChange={handleMessageInputChange}
             placeholder={activeChatGamer ? `Message @${activeChatGamer.gamertag}...` : "Type a message..."}
-            className="flex-1 bg-[#121212] text-white text-sm px-4 py-2.5 rounded-xl border border-[#2a2a2e] focus:outline-none focus:border-[#5003BD] placeholder:text-[#71717a]"
+            className="flex-1 bg-[#121212] text-white text-sm px-4 py-3 rounded-xl border border-[#2a2a2e] focus:outline-none focus:border-[#5003BD] placeholder:text-[#71717a]"
           />
           <button
             type="submit"
             disabled={!messageInput.trim() || isSending}
-            className="p-2.5 bg-[#5003BD] hover:bg-[#6207e3] disabled:opacity-40 text-white rounded-xl transition-all cursor-pointer shadow-lg shadow-[#5003BD]/30"
+            className="p-3 bg-[#5003BD] hover:bg-[#6207e3] disabled:opacity-40 text-white rounded-xl transition-all cursor-pointer shadow-lg shadow-[#5003BD]/30 shrink-0"
           >
             <Send className="w-4 h-4" />
           </button>
