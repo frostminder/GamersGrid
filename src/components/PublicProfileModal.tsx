@@ -4,6 +4,7 @@ import { UserProfile, getFollowStats, getFollowers, getFollowing } from '../lib/
 import { UserListModal } from './UserListModal';
 import { getCountryFlag } from '../data/countries';
 import { subscribeToPresence, PresenceStatus } from '../lib/presenceService';
+import { ProfileGamesSection } from './profile/ProfileGamesSection';
 
 interface PublicProfileModalProps {
   user: UserProfile;
@@ -16,6 +17,7 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({ user, on
   const [listUsers, setListUsers] = useState<UserProfile[]>([]);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null); // for nesting
   const [presence, setPresence] = useState<PresenceStatus>('offline');
+  const [activeTab, setActiveTab] = useState<'Games' | 'Posts'>('Games');
 
   const activeUser = selectedUser || user;
 
@@ -179,17 +181,46 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({ user, on
               </button>
             </div>
 
-            {/* Posts Grid Mockup */}
+            {/* Tabs & Content */}
             <div className="mt-8 border-t border-[#2a2a2e] pt-6">
               <div className="flex gap-4 mb-4">
-                <button className="text-white font-bold pb-2 border-b-2 border-[#5003BD]">Posts</button>
-                <button className="text-[#777777] font-bold pb-2 border-b-2 border-transparent">Games</button>
+                <button 
+                  onClick={() => setActiveTab('Games')}
+                  className={`font-bold pb-2 border-b-2 transition-colors cursor-pointer ${
+                    activeTab === 'Games' 
+                      ? 'text-white border-[#5003BD]' 
+                      : 'text-[#777777] border-transparent hover:text-white'
+                  }`}
+                >
+                  Games & Platforms
+                </button>
+                <button 
+                  onClick={() => setActiveTab('Posts')}
+                  className={`font-bold pb-2 border-b-2 transition-colors cursor-pointer ${
+                    activeTab === 'Posts' 
+                      ? 'text-white border-[#5003BD]' 
+                      : 'text-[#777777] border-transparent hover:text-white'
+                  }`}
+                >
+                  Posts
+                </button>
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                {[1, 2, 3, 4, 5, 6].map(i => (
-                  <div key={i} className="aspect-square bg-[#232323] rounded-lg"></div>
-                ))}
-              </div>
+
+              {activeTab === 'Games' && (
+                <ProfileGamesSection
+                  platforms={activeUser.platforms || []}
+                  games={activeUser.games || []}
+                  isOwner={false}
+                />
+              )}
+
+              {activeTab === 'Posts' && (
+                <div className="grid grid-cols-3 gap-2 animate-in fade-in duration-200">
+                  {[1, 2, 3, 4, 5, 6].map(i => (
+                    <div key={i} className="aspect-square bg-[#232323] rounded-lg"></div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

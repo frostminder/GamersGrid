@@ -1,13 +1,14 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { auth, db } from '../lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { LogOut, Settings, Camera, Crown, Plus, Image as ImageIcon, Eye, Play } from 'lucide-react';
+import { LogOut, Settings, Camera, Crown, Plus, Image as ImageIcon, Eye, Play, Trophy, Medal, Award, Flame } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import { getFollowStats, getFollowers, getFollowing, UserProfile } from '../lib/userService';
 import { UserListModal } from './UserListModal';
 import { PublicProfileModal } from './PublicProfileModal';
 import { getCountryFlag } from '../data/countries';
+import { ProfileGamesSection } from './profile/ProfileGamesSection';
 
 interface ProfileTabProps {
   onNavigate?: (tab: string) => void;
@@ -19,7 +20,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onNavigate }) => {
   const [loading, setLoading] = useState(true);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
-  const [activeTab, setActiveTab] = useState('Posts');
+  const [activeTab, setActiveTab] = useState('Games');
 
   const [stats, setStats] = useState({ followers: 0, following: 0 });
   const [showListModal, setShowListModal] = useState<'followers' | 'following' | null>(null);
@@ -270,27 +271,83 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onNavigate }) => {
           ))}
         </div>
 
-        {/* Posts Grid Mock */}
-        <div className="w-full mt-1 grid grid-cols-3 gap-1">
-          {/* Post 1 */}
-          <div className="aspect-square bg-[#2a2a2e] relative group cursor-pointer overflow-hidden">
-            <img src="https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80&w=800" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-            <div className="absolute bottom-2 left-2 flex items-center gap-1 text-white text-[10px] font-bold bg-black/50 px-1.5 py-0.5 rounded backdrop-blur">
-              <Eye className="w-3 h-3" /> 14K
+        {/* Tab Content */}
+        {activeTab === 'Games' && (
+          <ProfileGamesSection 
+            platforms={profile.platforms || []} 
+            games={profile.games || []} 
+            isOwner={true}
+            onUpdate={(newPlatforms, newGames) => {
+              setProfile((prev: any) => ({ ...prev, platforms: newPlatforms, games: newGames }));
+            }}
+          />
+        )}
+
+        {activeTab === 'Posts' && (
+          <div className="w-full mt-4 grid grid-cols-3 gap-1 animate-in fade-in duration-200">
+            {/* Post 1 */}
+            <div className="aspect-square bg-[#2a2a2e] relative group cursor-pointer overflow-hidden rounded-lg">
+              <img src="https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&q=80&w=800" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+              <div className="absolute bottom-2 left-2 flex items-center gap-1 text-white text-[10px] font-bold bg-black/50 px-1.5 py-0.5 rounded backdrop-blur">
+                <Eye className="w-3 h-3" /> 14K
+              </div>
+            </div>
+            {/* Post 2 */}
+            <div className="aspect-square bg-[#2a2a2e] relative group cursor-pointer overflow-hidden rounded-lg">
+              <img src="https://images.unsplash.com/photo-1552820728-8b83bb6b773f?auto=format&fit=crop&q=80&w=800" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+              <div className="absolute top-2 right-2 p-1 bg-black/50 rounded-md backdrop-blur">
+                <Play className="w-3 h-3 text-white" />
+              </div>
+            </div>
+            {/* Post 3 */}
+            <div className="aspect-square bg-[#2a2a2e] relative group cursor-pointer overflow-hidden rounded-lg">
+              <img src="https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&q=80&w=800" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
             </div>
           </div>
-          {/* Post 2 */}
-          <div className="aspect-square bg-[#2a2a2e] relative group cursor-pointer overflow-hidden">
-            <img src="https://images.unsplash.com/photo-1552820728-8b83bb6b773f?auto=format&fit=crop&q=80&w=800" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-            <div className="absolute top-2 right-2 p-1 bg-black/50 rounded-md backdrop-blur">
-              <Play className="w-3 h-3 text-white" />
+        )}
+
+        {activeTab === 'Achievements' && (
+          <div className="w-full py-6 flex flex-col gap-3 animate-in fade-in duration-200">
+            <div className="p-4 rounded-xl bg-[#18181b] border border-[#27272a] flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                <Trophy className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold text-white">First Blood</span>
+                  <span className="text-[10px] font-mono text-amber-400 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-500/30">UNLOCKED</span>
+                </div>
+                <p className="text-xs text-zinc-400 mt-0.5">Completed onboarding & selected primary gaming roster.</p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-[#18181b] border border-[#27272a] flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-lg bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-400">
+                <Flame className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold text-white">Squad Connector</span>
+                  <span className="text-[10px] font-mono text-purple-400 bg-purple-950/60 px-2 py-0.5 rounded border border-purple-500/30">UNLOCKED</span>
+                </div>
+                <p className="text-xs text-zinc-400 mt-0.5">Connected community presence and real-time chat.</p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-[#18181b] border border-[#27272a] flex items-center gap-3.5 opacity-70">
+              <div className="w-10 h-10 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-500">
+                <Medal className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-bold text-zinc-300">Tournament Champion</span>
+                  <span className="text-[10px] font-mono text-zinc-500 bg-zinc-800 px-2 py-0.5 rounded">IN PROGRESS</span>
+                </div>
+                <p className="text-xs text-zinc-500 mt-0.5">Win your first official community bracket.</p>
+              </div>
             </div>
           </div>
-          {/* Post 3 */}
-          <div className="aspect-square bg-[#2a2a2e] relative group cursor-pointer overflow-hidden">
-            <img src="https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&q=80&w=800" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-          </div>
-        </div>
+        )}
 
       </div>
       

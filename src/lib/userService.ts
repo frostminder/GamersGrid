@@ -22,6 +22,8 @@ export interface UserProfile {
   bannerURL?: string;
   bio?: string;
   country?: string;
+  platforms?: string[];
+  games?: string[];
 }
 
 export interface Notification {
