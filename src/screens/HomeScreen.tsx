@@ -1,19 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Wifi, Users, LayoutDashboard, Settings, Bell, Home, Trophy, PlaySquare, User, Search, Plus, MessageSquare } from 'lucide-react';
+import { ShieldCheck, Wifi, Users, LayoutDashboard, Settings, Bell, Home, Trophy, PlaySquare, User, Search, Plus, MessageSquare, Flame } from 'lucide-react';
 import { GamersGridLogo } from '../components/GamersGridLogo';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { auth, db } from '../lib/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { doc, onSnapshot, collection, query, where } from 'firebase/firestore';
+import { doc, onSnapshot, collection, query, where, getDocs, addDoc, updateDoc, orderBy, serverTimestamp } from 'firebase/firestore';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ProfileTab } from '../components/ProfileTab';
 import { TournamentHub } from '../components/TournamentHub';
-import { CreateMockup, SettingsMockup } from '../components/MockupScreens';
+import { SettingsMockup } from '../components/MockupScreens';
 import { MessagesScreen } from '../components/MessagesScreen';
 import { SearchScreen } from '../components/SearchScreen';
 import { NotificationsScreen } from '../components/NotificationsScreen';
+import { CreatePostScreen } from '../components/CreatePostScreen';
+import { FeedCard } from '../components/FeedCard';
+import { ClipPlayerModal } from '../components/ClipPlayerModal';
 import { startPresenceTracking } from '../lib/presenceService';
-import { MOCK_TOURNAMENTS, INITIAL_WALLET } from '../types/mockData';
+import { MOCK_TOURNAMENTS, INITIAL_WALLET, INITIAL_POSTS, Post } from '../types/mockData';
 
 export const HomeScreen: React.FC = () => {
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
@@ -25,6 +28,9 @@ export const HomeScreen: React.FC = () => {
   const [dismissInstall, setDismissInstall] = useState(false);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState<number>(0);
+  const [postsList, setPostsList] = useState<any[]>([]);
+  const [loadingPosts, setLoadingPosts] = useState<boolean>(true);
+  const [selectedClip, setSelectedClip] = useState<any | null>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const activeTab = searchParams.get('tab') || 'home';
@@ -140,6 +146,204 @@ export const HomeScreen: React.FC = () => {
     };
   }, []);
 
+  // Listen and seed posts
+  useEffect(() => {
+    let unsubscribePosts: () => void;
+
+    const syncPosts = async () => {
+      try {
+        setLoadingPosts(true);
+        // First check if collection is empty, and seed if so
+        const qSeed = query(collection(db, 'posts'));
+        const snapSeed = await getDocs(qSeed);
+        
+        if (snapSeed.empty) {
+          console.log('Seeding default posts into Firestore...');
+          for (const post of INITIAL_POSTS) {
+            await addDoc(collection(db, 'posts'), {
+              ...post,
+              createdAtTimestamp: serverTimestamp() // We'll add this timestamp so ordered sorting is exact
+            });
+          }
+        }
+
+        // Setup real-time listener for posts
+        const postsQuery = query(collection(db, 'posts'));
+        
+        unsubscribePosts = onSnapshot(postsQuery, (snap) => {
+          const loaded: any[] = [];
+          snap.forEach((docSnap) => {
+            const data = docSnap.data();
+            loaded.push({
+              id: docSnap.id,
+              ...data
+            });
+          });
+          
+          // Sort posts descending by custom parameter or ID so latest user post always sits at top
+          loaded.sort((a, b) => {
+            if (a.createdAt === 'Just now' && b.createdAt !== 'Just now') return -1;
+            if (b.createdAt === 'Just now' && a.createdAt !== 'Just now') return 1;
+            
+            const timeA = a.createdAtTimestamp?.seconds || 0;
+            const timeB = b.createdAtTimestamp?.seconds || 0;
+            if (timeB !== timeA) {
+              return timeB - timeA;
+            }
+            return b.id.localeCompare(a.id);
+          });
+
+          setPostsList(loaded);
+          setLoadingPosts(false);
+        }, (err) => {
+          console.error('Error listening to posts:', err);
+          setLoadingPosts(false);
+        });
+
+      } catch (err) {
+        console.error('Error in syncPosts:', err);
+        setLoadingPosts(false);
+      }
+    };
+
+    syncPosts();
+
+    return () => {
+      if (unsubscribePosts) unsubscribePosts();
+    };
+  }, []);
+
+  const handleLikePost = async (postId: string) => {
+    try {
+      const pIndex = postsList.findIndex(p => p.id === postId);
+      if (pIndex === -1) return;
+      const targetPost = postsList[pIndex];
+      const newIsLiked = !targetPost.isLiked;
+      const newLikesCount = targetPost.likesCount + (newIsLiked ? 1 : -1);
+
+      // Optimistic update
+      setPostsList(prev => prev.map(p => p.id === postId ? { ...p, isLiked: newIsLiked, likesCount: newLikesCount } : p));
+      if (selectedClip && selectedClip.id === postId) {
+        setSelectedClip(prev => prev ? { ...prev, isLiked: newIsLiked, likesCount: newLikesCount } : null);
+      }
+
+      // Sync with Firestore
+      await updateDoc(doc(db, 'posts', postId), {
+        isLiked: newIsLiked,
+        likesCount: newLikesCount
+      });
+    } catch (err) {
+      console.error('Error liking post:', err);
+    }
+  };
+
+  const handleFollowCreator = async (creatorId: string) => {
+    try {
+      setPostsList(prev => prev.map(p => {
+        if (p.creator.id === creatorId) {
+          const currentFollowState = p.creator.isFollowing;
+          return {
+            ...p,
+            creator: {
+              ...p.creator,
+              isFollowing: !currentFollowState
+            }
+          };
+        }
+        return p;
+      }));
+
+      if (selectedClip && selectedClip.creator.id === creatorId) {
+        setSelectedClip(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            creator: {
+              ...prev.creator,
+              isFollowing: !prev.creator.isFollowing
+            }
+          };
+        });
+      }
+    } catch (err) {
+      console.error('Error toggling follow:', err);
+    }
+  };
+
+  const handleSavePost = async (postId: string) => {
+    try {
+      const target = postsList.find(p => p.id === postId);
+      if (!target) return;
+      const newIsSaved = !target.isSaved;
+
+      setPostsList(prev => prev.map(p => p.id === postId ? { ...p, isSaved: newIsSaved } : p));
+      if (selectedClip && selectedClip.id === postId) {
+        setSelectedClip(prev => prev ? { ...prev, isSaved: newIsSaved } : null);
+      }
+
+      await updateDoc(doc(db, 'posts', postId), {
+        isSaved: newIsSaved
+      });
+    } catch (err) {
+      console.error('Error saving post:', err);
+    }
+  };
+
+  const handleAddComment = async (postId: string, commentText: string) => {
+    try {
+      const target = postsList.find(p => p.id === postId);
+      if (!target) return;
+
+      const currentUser = auth.currentUser;
+      const newComment = {
+        id: `c_${Date.now()}`,
+        user: {
+          id: currentUser?.uid || 'guest',
+          username: userProfile?.gamertag || currentUser?.email?.split('@')[0] || 'gamer',
+          displayName: userProfile?.name || userProfile?.gamertag || 'Gamer',
+          avatar: userProfile?.photoURL || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
+        },
+        text: commentText,
+        createdAt: 'Just now',
+        likes: 0
+      };
+
+      const updatedComments = [...(target.comments || []), newComment];
+      const newCommentsCount = (target.commentsCount || 0) + 1;
+
+      setPostsList(prev => prev.map(p => p.id === postId ? { ...p, comments: updatedComments, commentsCount: newCommentsCount } : p));
+      if (selectedClip && selectedClip.id === postId) {
+        setSelectedClip(prev => prev ? { ...prev, comments: updatedComments, commentsCount: newCommentsCount } : null);
+      }
+
+      await updateDoc(doc(db, 'posts', postId), {
+        comments: updatedComments,
+        commentsCount: newCommentsCount
+      });
+    } catch (err) {
+      console.error('Error adding comment:', err);
+    }
+  };
+
+  const handleTipCoins = async (post: any) => {
+    try {
+      const updatedShares = (post.sharesCount || 0) + 1;
+      
+      setPostsList(prev => prev.map(p => p.id === post.id ? { ...p, sharesCount: updatedShares } : p));
+      if (selectedClip && selectedClip.id === post.id) {
+        setSelectedClip(prev => prev ? { ...prev, sharesCount: updatedShares } : null);
+      }
+
+      alert(`🪙 Sparkles! You successfully tipped 100 Gaming Coins to @${post.creator.username}!`);
+      
+      await updateDoc(doc(db, 'posts', post.id), {
+        sharesCount: updatedShares
+      });
+    } catch (err) {
+      console.error('Error tipping coins:', err);
+    }
+  };
+
   return (
     <div className={`min-h-screen w-full bg-[#121212] text-white flex flex-col items-center ${isChatActive ? 'pb-0' : 'pb-24'}`}>
       {/* Premium Top Navigation */}
@@ -190,7 +394,7 @@ export const HomeScreen: React.FC = () => {
       )}
 
       {/* Main Content Area */}
-      <main className={`flex-1 w-full flex flex-col ${isChatActive ? 'p-0 gap-0 max-w-none' : (activeTab === 'profile' || activeTab === 'settings') ? 'p-0 gap-0 max-w-none' : 'max-w-4xl px-4 pt-3 pb-6 gap-4'}`}>
+      <main className={`flex-1 w-full flex flex-col ${isChatActive ? 'p-0 gap-0 max-w-none' : (activeTab === 'profile' || activeTab === 'settings' || activeTab === 'create') ? 'p-0 gap-0 max-w-none' : 'max-w-4xl px-4 pt-3 pb-6 gap-4'}`}>
         
         {activeTab === 'home' && (
           <>
@@ -229,6 +433,58 @@ export const HomeScreen: React.FC = () => {
                 <p className="text-sm text-[#777777] mt-1">Direct messaging, squads, and groups.</p>
               </div>
             </div>
+
+            {/* Community Highlights & Clips Feed Section */}
+            <div className="mt-8 flex flex-col gap-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Flame className="w-5 h-5 text-[#5003BD] animate-pulse" />
+                  <h3 className="text-lg font-bold tracking-tight">Trending Highlights</h3>
+                </div>
+                <button 
+                  onClick={() => handleTabChange('search')} 
+                  className="text-xs font-bold text-[#9e5cff] hover:underline"
+                >
+                  View All Clips
+                </button>
+              </div>
+
+              {loadingPosts ? (
+                <div className="flex flex-col items-center justify-center py-12 gap-3">
+                  <div className="w-8 h-8 border-2 border-[#5003BD] border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-[#888888] text-xs font-mono">LOADING CLIPS...</span>
+                </div>
+              ) : postsList.length === 0 ? (
+                <div className="bg-[#1a1a1a] border border-[#2a2a2e] rounded-3xl p-12 text-center flex flex-col items-center gap-4">
+                  <span className="text-[#555555] text-5xl">🎬</span>
+                  <div className="space-y-1">
+                    <h4 className="font-bold text-white text-base">No community clips yet</h4>
+                    <p className="text-xs text-[#888888] max-w-sm">Be the first to upload a clip, gameplay highlight, or esports commentary!</p>
+                  </div>
+                  <button 
+                    onClick={() => handleTabChange('create')}
+                    className="bg-[#5003BD] hover:bg-[#630cdb] text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors mt-2"
+                  >
+                    Post a Clip
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-6">
+                  {postsList.map((post) => (
+                    <FeedCard 
+                      key={post.id}
+                      post={post}
+                      onLike={handleLikePost}
+                      onFollow={handleFollowCreator}
+                      onOpenComments={(p) => setSelectedClip(p)}
+                      onOpenClipModal={(p) => setSelectedClip(p)}
+                      onTipCoins={handleTipCoins}
+                      onSave={handleSavePost}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           </>
         )}
 
@@ -250,7 +506,10 @@ export const HomeScreen: React.FC = () => {
           <NotificationsScreen onBack={() => handleTabChange('home')} />
         )}
         {activeTab === 'create' && (
-          <CreateMockup />
+          <CreatePostScreen 
+            onBack={() => handleTabChange('home')}
+            onPostCreated={() => handleTabChange('home')}
+          />
         )}
 
         {activeTab === 'messages' && (
@@ -280,6 +539,19 @@ export const HomeScreen: React.FC = () => {
         )}
 
       </main>
+
+      {/* Immersive Clip Player Overlay */}
+      {selectedClip && (
+        <ClipPlayerModal 
+          post={selectedClip}
+          onClose={() => setSelectedClip(null)}
+          onLike={handleLikePost}
+          onFollow={handleFollowCreator}
+          onAddComment={handleAddComment}
+          onTipCoins={handleTipCoins}
+          onSave={handleSavePost}
+        />
+      )}
 
       {/* PWA Install Modal (Android/Desktop) */}
       {(!isInstalled && isInstallable && !dismissInstall) && (
