@@ -104,5 +104,10 @@ service cloud.firestore {
     match /messages/{messageId} {
       allow read, write: if isSignedIn();
     }
+
+    match /posts/{postId} {
+      allow read, list: if isSignedIn();
+      allow create, update, delete: if isSignedIn();
+    }
   }
 }

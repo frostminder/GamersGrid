@@ -347,7 +347,7 @@ export const HomeScreen: React.FC = () => {
   return (
     <div className={`min-h-screen w-full bg-[#121212] text-white flex flex-col items-center ${isChatActive ? 'pb-0' : 'pb-24'}`}>
       {/* Premium Top Navigation */}
-      {(!isChatActive && activeTab !== 'profile' && activeTab !== 'settings') && (
+      {(!isChatActive && activeTab !== 'profile' && activeTab !== 'settings' && activeTab !== 'create') && (
         <header className="w-full bg-[#121212]/80 backdrop-blur-xl border-b border-[#2a2a2e] px-4 py-3 flex items-center justify-between sticky top-0 z-50">
           <div className="flex items-center gap-3">
             {!logoError ? (

@@ -18,7 +18,7 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
   const [postType, setPostType] = useState<'clip' | 'image' | 'text'>('clip');
   const [title, setTitle] = useState('');
   const [caption, setCaption] = useState('');
-  const [selectedGame, setSelectedGame] = useState('Blood Strike');
+  const [selectedGame, setSelectedGame] = useState('Gaming');
   const [tags, setTags] = useState<string[]>([]);
   const [customTag, setCustomTag] = useState('');
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -253,11 +253,6 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
       return;
     }
 
-    if (!selectedGame.trim()) {
-      setError('Gaming title is required.');
-      return;
-    }
-
     if (postType === 'clip' && !title.trim()) {
       setError('A post title is required for sharing video clips.');
       return;
@@ -342,39 +337,6 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
 
   return (
     <div className="flex-1 w-full bg-[#121212] text-white flex flex-col min-h-screen">
-      {/* Immersive Top Bar */}
-      <header className="sticky top-0 z-30 bg-[#121212]/90 backdrop-blur-md px-4 py-4 border-b border-[#2a2a2e] flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          {onBack && (
-            <button 
-              onClick={onBack}
-              className="p-2 rounded-lg bg-[#1a1a1a] border border-[#2a2a2e] hover:bg-[#252528] transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5 text-gray-400" />
-            </button>
-          )}
-          <div>
-            <h1 className="text-xl font-bold tracking-tight">Create Highlight</h1>
-            <p className="text-xs text-[#888888]">Share your epic gaming moments</p>
-          </div>
-        </div>
-        <button
-          onClick={handleSubmit}
-          disabled={isSubmitting || isProcessingMedia}
-          className="bg-[#5003BD] hover:bg-[#6a0ce6] disabled:bg-[#5003BD]/50 disabled:cursor-not-allowed text-white text-sm font-bold px-4 py-2.5 rounded-xl transition-all duration-300 flex items-center gap-2 active:scale-95 hover:shadow-[0_0_15px_rgba(80,3,189,0.4)]"
-        >
-          {isSubmitting || isProcessingMedia ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" /> Processing
-            </>
-          ) : (
-            <>
-              Post <Send className="w-4 h-4" />
-            </>
-          )}
-        </button>
-      </header>
-
       {/* Main Form Body */}
       <form onSubmit={handleSubmit} className="flex-1 max-w-2xl w-full mx-auto p-4 flex flex-col gap-6 pb-24">
         {error && (
@@ -662,22 +624,6 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
           </div>
         )}
 
-        {/* 4. Custom Game Specification Block */}
-        <div className="flex flex-col gap-2">
-          <label className="text-sm font-bold text-[#aaaaaa]">SPECIFY GAMING TITLE</label>
-          <div className="relative">
-            <Gamepad2 className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 w-5 h-5" />
-            <input 
-              type="text"
-              value={selectedGame}
-              onChange={(e) => setSelectedGame(e.target.value)}
-              placeholder="e.g., Call of Duty, Blood Strike, Valorant, Fortnite..."
-              className="w-full bg-[#1a1a1a] text-white text-sm font-bold pl-12 pr-4 py-3.5 rounded-2xl border border-[#2a2a2e] focus:outline-none focus:border-[#5003BD] transition-colors"
-              required
-            />
-          </div>
-        </div>
-
         {/* 5. Inputs (Title & Caption) */}
         <div className="flex flex-col gap-5 bg-[#1a1a1a] p-5 rounded-3xl border border-[#2a2a2e]">
           {postType === 'clip' && (
@@ -765,6 +711,38 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
               );
             })}
           </div>
+        </div>
+
+        {/* Dynamic & Highly Visible Post Button at bottom of form */}
+        <div className="mt-6 pt-4 border-t border-[#2a2a2e] flex flex-col gap-3">
+          <button
+            type="submit"
+            disabled={isSubmitting || isProcessingMedia}
+            className="w-full bg-[#5003BD] hover:bg-[#6a0ce6] disabled:bg-[#5003BD]/50 disabled:cursor-not-allowed text-white text-base font-bold py-4 rounded-2xl transition-all duration-300 flex items-center justify-center gap-3 active:scale-[0.98] shadow-lg shadow-[#5003BD]/20 hover:shadow-[#5003BD]/40"
+          >
+            {isSubmitting || isProcessingMedia ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin text-white" />
+                <span>Processing & Publishing...</span>
+              </>
+            ) : (
+              <>
+                <span>Publish Post</span>
+                <Send className="w-5 h-5" />
+              </>
+            )}
+          </button>
+
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              disabled={isSubmitting || isProcessingMedia}
+              className="w-full bg-[#1a1a1a] hover:bg-[#232326] text-gray-400 hover:text-white border border-[#2a2a2e] text-sm font-bold py-3.5 rounded-2xl transition-all duration-300 flex items-center justify-center gap-2 active:scale-[0.98]"
+            >
+              Cancel & Discard
+            </button>
+          )}
         </div>
       </form>
     </div>
