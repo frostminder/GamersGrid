@@ -27,7 +27,7 @@ export const ClipPlayerModal: React.FC<ClipPlayerModalProps> = ({
   if (!post) return null;
 
   const [isPlaying, setIsPlaying] = useState(true);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
   const [commentText, setCommentText] = useState('');
   const [showHeartAnim, setShowHeartAnim] = useState(false);
   const [commentsList, setCommentsList] = useState<Comment[]>(post.comments || []);

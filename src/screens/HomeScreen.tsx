@@ -4,7 +4,7 @@ import { GamersGridLogo } from '../components/GamersGridLogo';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { auth, db } from '../lib/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { doc, onSnapshot, collection, query, where, getDocs, addDoc, updateDoc, orderBy, serverTimestamp } from 'firebase/firestore';
+import { doc, onSnapshot, collection, query, where, getDocs, addDoc, updateDoc, orderBy, serverTimestamp, limit } from 'firebase/firestore';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ProfileTab } from '../components/ProfileTab';
 import { TournamentHub } from '../components/TournamentHub';
@@ -153,46 +153,29 @@ export const HomeScreen: React.FC = () => {
     const syncPosts = async () => {
       try {
         setLoadingPosts(true);
-        // First check if collection is empty, and seed if so
-        const qSeed = query(collection(db, 'posts'));
-        const snapSeed = await getDocs(qSeed);
         
-        if (snapSeed.empty) {
-          console.log('Seeding default posts into Firestore...');
-          for (const post of INITIAL_POSTS) {
-            await addDoc(collection(db, 'posts'), {
-              ...post,
-              createdAtTimestamp: serverTimestamp() // We'll add this timestamp so ordered sorting is exact
-            });
-          }
-        }
-
-        // Setup real-time listener for posts
-        const postsQuery = query(collection(db, 'posts'));
+        // Setup real-time listener for posts, ordering by createdAtTimestamp descending
+        // Only load posts that actually have a timestamp (ignores old mockups if any are malformed)
+        const postsQuery = query(
+          collection(db, 'posts'),
+          orderBy('createdAtTimestamp', 'desc'),
+          limit(50)
+        );
         
         unsubscribePosts = onSnapshot(postsQuery, (snap) => {
           const loaded: any[] = [];
           snap.forEach((docSnap) => {
             const data = docSnap.data();
-            loaded.push({
-              id: docSnap.id,
-              ...data
-            });
+            // Filter out old mockup seeded posts that might lack real creator data or have mock 'isNew' flags
+            // if we want to ensure only real user posts show up
+            if (data.creator && !['system', 'usr_1', 'usr_2', 'usr_3', 'usr_4'].includes(data.creator.id)) {
+              loaded.push({
+                ...data,
+                id: docSnap.id
+              });
+            }
           });
           
-          // Sort posts descending by custom parameter or ID so latest user post always sits at top
-          loaded.sort((a, b) => {
-            if (a.createdAt === 'Just now' && b.createdAt !== 'Just now') return -1;
-            if (b.createdAt === 'Just now' && a.createdAt !== 'Just now') return 1;
-            
-            const timeA = a.createdAtTimestamp?.seconds || 0;
-            const timeB = b.createdAtTimestamp?.seconds || 0;
-            if (timeB !== timeA) {
-              return timeB - timeA;
-            }
-            return b.id.localeCompare(a.id);
-          });
-
           setPostsList(loaded);
           setLoadingPosts(false);
         }, (err) => {
@@ -397,58 +380,9 @@ export const HomeScreen: React.FC = () => {
       <main className={`flex-1 w-full flex flex-col ${isChatActive ? 'p-0 gap-0 max-w-none' : (activeTab === 'profile' || activeTab === 'settings' || activeTab === 'create') ? 'p-0 gap-0 max-w-none' : 'max-w-4xl px-4 pt-3 pb-6 gap-4'}`}>
         
         {activeTab === 'home' && (
-          <>
-            {/* Quick Stats / Welcome */}
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <h1 className="text-2xl font-bold text-white">Welcome back.</h1>
-                <p className="text-[#888888] text-sm">Ready to dominate the grid?</p>
-              </div>
-              <div className="flex items-center gap-1.5 text-xs font-mono text-[#888888] bg-[#1a1a1a] px-3 py-1.5 rounded-full border border-[#2a2a2e] shadow-inner">
-                <Wifi className="w-3.5 h-3.5 text-[#5003BD] animate-pulse" />
-                <span className="text-[#eeeeee]">ONLINE</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div 
-                onClick={() => handleTabChange('tournaments')}
-                className="bg-[#1a1a1a] border border-[#2a2a2e] rounded-2xl p-6 flex flex-col items-start justify-center min-h-[180px] hover:border-[#5003BD] hover:bg-[#1c1c20] transition-all cursor-pointer group shadow-lg"
-              >
-                <div className="p-3 bg-[#121212] rounded-xl mb-4 group-hover:scale-110 transition-transform duration-300">
-                  <LayoutDashboard className="w-8 h-8 text-[#5003BD]" />
-                </div>
-                <h2 className="text-xl font-bold">Tournaments Hub</h2>
-                <p className="text-sm text-[#777777] mt-1">Join open lobbies and track brackets.</p>
-              </div>
-
-              <div 
-                onClick={() => handleTabChange('messages')}
-                className="bg-[#1a1a1a] border border-[#2a2a2e] rounded-2xl p-6 flex flex-col items-start justify-center min-h-[180px] hover:border-[#5003BD] hover:bg-[#1c1c20] transition-all cursor-pointer group shadow-lg"
-              >
-                <div className="p-3 bg-[#121212] rounded-xl mb-4 group-hover:scale-110 transition-transform duration-300">
-                  <MessageSquare className="w-8 h-8 text-[#5003BD]" />
-                </div>
-                <h2 className="text-xl font-bold">Community Messages</h2>
-                <p className="text-sm text-[#777777] mt-1">Direct messaging, squads, and groups.</p>
-              </div>
-            </div>
-
+          <div className="flex flex-col gap-6">
             {/* Community Highlights & Clips Feed Section */}
-            <div className="mt-8 flex flex-col gap-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Flame className="w-5 h-5 text-[#5003BD] animate-pulse" />
-                  <h3 className="text-lg font-bold tracking-tight">Trending Highlights</h3>
-                </div>
-                <button 
-                  onClick={() => handleTabChange('search')} 
-                  className="text-xs font-bold text-[#9e5cff] hover:underline"
-                >
-                  View All Clips
-                </button>
-              </div>
-
+            <div className="flex flex-col gap-4">
               {loadingPosts ? (
                 <div className="flex flex-col items-center justify-center py-12 gap-3">
                   <div className="w-8 h-8 border-2 border-[#5003BD] border-t-transparent rounded-full animate-spin"></div>
@@ -485,7 +419,7 @@ export const HomeScreen: React.FC = () => {
                 </div>
               )}
             </div>
-          </>
+          </div>
         )}
 
         {activeTab === 'tournaments' && (
@@ -499,7 +433,12 @@ export const HomeScreen: React.FC = () => {
         )}
 
         {activeTab === 'search' && (
-          <SearchScreen onBack={() => handleTabChange('home')} />
+          <SearchScreen 
+            onBack={() => handleTabChange('home')}
+            onOpenClipModal={(p) => setSelectedClip(p)}
+            onLikePost={handleLikePost}
+            onFollowCreator={handleFollowCreator}
+          />
         )}
 
         {activeTab === 'notifications' && (

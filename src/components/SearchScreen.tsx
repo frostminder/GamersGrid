@@ -1,26 +1,43 @@
 import React, { useState, useEffect } from 'react';
 import { Search, User, Plus, Check, ArrowLeft } from 'lucide-react';
+import { collection, query, getDocs, orderBy, limit } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { searchUsers, followUser, unfollowUser, getIsFollowing, UserProfile } from '../lib/userService';
 import { PublicProfileModal } from './PublicProfileModal';
 import { getCountryFlag } from '../data/countries';
+import { FeedCard } from './FeedCard';
+import { Post } from '../types/mockData';
 
-export const SearchScreen: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
-  const [query, setQuery] = useState('');
+export const SearchScreen: React.FC<{ 
+  onBack?: () => void;
+  onOpenClipModal?: (post: Post) => void;
+  onLikePost?: (postId: string) => void;
+  onFollowCreator?: (creatorId: string) => void;
+}> = ({ onBack, onOpenClipModal, onLikePost, onFollowCreator }) => {
+  const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'users' | 'posts'>('users');
-  const [results, setResults] = useState<UserProfile[]>([]);
+  
+  const [userResults, setUserResults] = useState<UserProfile[]>([]);
+  const [postResults, setPostResults] = useState<Post[]>([]);
+  
   const [loading, setLoading] = useState(false);
   const [followingMap, setFollowingMap] = useState<Record<string, boolean>>({});
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {
-      if (query && activeTab === 'users') {
-        setLoading(true);
-        const users = await searchUsers(query);
-        setResults(users.filter(u => u.uid !== auth.currentUser?.uid));
+      if (!searchQuery) {
+        setUserResults([]);
+        setPostResults([]);
+        return;
+      }
+      
+      setLoading(true);
+      
+      if (activeTab === 'users') {
+        const users = await searchUsers(searchQuery);
+        setUserResults(users.filter(u => u.uid !== auth.currentUser?.uid));
         
-        // Check follow status for results
         if (auth.currentUser) {
           const statuses: Record<string, boolean> = {};
           for (const u of users) {
@@ -28,21 +45,44 @@ export const SearchScreen: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
           }
           setFollowingMap(statuses);
         }
-        setLoading(false);
-      } else {
-        setResults([]);
+      } else if (activeTab === 'posts') {
+        // Fetch recent posts and filter client-side for simple search
+        const postsRef = collection(db, 'posts');
+        const q = query(postsRef, orderBy('createdAtTimestamp', 'desc'), limit(100));
+        
+        try {
+          const snap = await getDocs(q);
+          const loaded: any[] = [];
+          const lowerQuery = searchQuery.toLowerCase();
+          
+          snap.forEach((docSnap) => {
+            const data = docSnap.data();
+            if (data.creator && !['system', 'usr_1', 'usr_2', 'usr_3', 'usr_4'].includes(data.creator.id)) {
+              const titleMatch = data.title?.toLowerCase().includes(lowerQuery);
+              const captionMatch = data.caption?.toLowerCase().includes(lowerQuery);
+              const gameMatch = data.game?.toLowerCase().includes(lowerQuery);
+              const tagsMatch = data.tags?.some((t: string) => t.toLowerCase().includes(lowerQuery));
+              
+              if (titleMatch || captionMatch || gameMatch || tagsMatch) {
+                loaded.push({ id: docSnap.id, ...data });
+              }
+            }
+          });
+          setPostResults(loaded);
+        } catch (err) {
+          console.error("Error searching posts", err);
+        }
       }
+      
+      setLoading(false);
     }, 300);
 
     return () => clearTimeout(delayDebounceFn);
-  }, [query, activeTab]);
+  }, [searchQuery, activeTab]);
 
   const handleFollowToggle = async (userId: string, isFollowing: boolean) => {
     if (!auth.currentUser) return;
-    
-    // Optimistic UI update
     setFollowingMap(prev => ({ ...prev, [userId]: !isFollowing }));
-    
     try {
       if (isFollowing) {
         await unfollowUser(auth.currentUser.uid, userId);
@@ -50,14 +90,13 @@ export const SearchScreen: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
         await followUser(auth.currentUser.uid, userId);
       }
     } catch (e) {
-      // Revert if error
       setFollowingMap(prev => ({ ...prev, [userId]: isFollowing }));
     }
   };
 
   return (
     <div className="flex-1 w-full flex flex-col h-full bg-[#121212] pt-0 px-0 pb-16 animate-in fade-in overflow-hidden">
-      <div className="sticky top-0 z-10 bg-[#121212] pb-2 pt-0">
+      <div className="sticky top-0 z-10 bg-[#121212] pb-2 pt-0 px-4 mt-4">
         <div className="flex items-center gap-3 mb-2">
           {onBack && (
             <button
@@ -77,8 +116,8 @@ export const SearchScreen: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
           </div>
           <input
             type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={activeTab === 'users' ? 'Search users...' : 'Search posts...'}
             className="w-full bg-[#232323] text-white placeholder-[#777777] rounded-xl pl-11 pr-4 py-3 border-[0.5px] border-[#5003BD]/50 focus:outline-none focus:border-[#7A22EC] transition-all"
           />
@@ -100,16 +139,16 @@ export const SearchScreen: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto overflow-x-hidden">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-4">
         {loading && (
           <div className="text-center py-10 text-[#777777]">Searching...</div>
         )}
         
-        {!loading && query && activeTab === 'users' && results.length === 0 && (
+        {!loading && searchQuery && activeTab === 'users' && userResults.length === 0 && (
           <div className="text-center py-10 text-[#777777]">No users found.</div>
         )}
 
-        {!loading && activeTab === 'users' && results.map(user => (
+        {!loading && activeTab === 'users' && userResults.map(user => (
           <div key={user.uid} className="flex items-center justify-between p-3 mb-2 bg-[#1a1a1a] rounded-xl border border-[#2a2a2e] hover:border-[#5003BD]/50 transition-colors">
             <div 
               className="flex items-center gap-3 cursor-pointer flex-1"
@@ -154,9 +193,24 @@ export const SearchScreen: React.FC<{ onBack?: () => void }> = ({ onBack }) => {
           </div>
         ))}
 
+        {!loading && searchQuery && activeTab === 'posts' && postResults.length === 0 && (
+          <div className="text-center py-10 text-[#777777]">No posts found.</div>
+        )}
+
         {!loading && activeTab === 'posts' && (
-          <div className="text-center py-10 text-[#777777]">
-            Post search coming soon...
+          <div className="flex flex-col gap-6">
+            {postResults.map((post) => (
+              <FeedCard 
+                key={post.id}
+                post={post}
+                onLike={(id) => onLikePost?.(id)}
+                onFollow={(id) => onFollowCreator?.(id)}
+                onOpenComments={(p) => onOpenClipModal?.(p)}
+                onOpenClipModal={(p) => onOpenClipModal?.(p)}
+                onTipCoins={() => {}}
+                onSave={() => {}}
+              />
+            ))}
           </div>
         )}
       </div>
