@@ -90,16 +90,24 @@ export const ClipPlayerModal: React.FC<ClipPlayerModalProps> = ({
           onClick={handleTogglePlay}
           onDoubleClick={handleDoubleTap}
         >
-          <video
-            ref={videoRef}
-            src={post.videoUrl}
-            poster={post.thumbnailUrl}
-            autoPlay
-            loop
-            playsInline
-            muted={isMuted}
-            className="w-full h-full object-contain max-h-full"
-          />
+          {post.videoUrl ? (
+            <video
+              ref={videoRef}
+              src={post.videoUrl}
+              poster={post.thumbnailUrl}
+              autoPlay
+              loop
+              playsInline
+              muted={isMuted}
+              className="w-full h-full object-contain max-h-full"
+            />
+          ) : (
+            <img
+              src={post.thumbnailUrl}
+              alt={post.title || post.caption}
+              className="w-full h-full object-contain max-h-full"
+            />
+          )}
 
           {/* Double-tap heart animation */}
           {showHeartAnim && (
@@ -109,7 +117,7 @@ export const ClipPlayerModal: React.FC<ClipPlayerModalProps> = ({
           )}
 
           {/* Pause overlay */}
-          {!isPlaying && (
+          {!isPlaying && post.videoUrl && (
             <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none">
               <div className="w-16 h-16 rounded-full bg-[#5003BD]/80 backdrop-blur-md flex items-center justify-center text-white shadow-xl">
                 <Play className="w-8 h-8 ml-1 fill-white" />
@@ -118,7 +126,7 @@ export const ClipPlayerModal: React.FC<ClipPlayerModalProps> = ({
           )}
 
           {/* Mute Button */}
-          <button
+          {post.videoUrl && <button
             onClick={(e) => {
               e.stopPropagation();
               if (videoRef.current) {
@@ -129,17 +137,17 @@ export const ClipPlayerModal: React.FC<ClipPlayerModalProps> = ({
             className="absolute bottom-4 left-4 p-2 rounded-full bg-black/60 text-white hover:bg-[#5003BD] transition-colors border border-white/10 z-20 cursor-pointer"
           >
             {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-          </button>
+          </button>}
 
           {/* 2-minute cap visual badge */}
-          <div className="absolute top-4 left-4 flex items-center gap-2 z-20">
+          {post.videoUrl && <div className="absolute top-4 left-4 flex items-center gap-2 z-20">
             <span className="bg-[#5003BD] text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase tracking-wider shadow-md">
               2-Min Highlight Cap
             </span>
             <span className="bg-black/70 text-white font-mono-uid text-[11px] px-2 py-0.5 rounded-full border border-white/10">
               {post.duration}
             </span>
-          </div>
+          </div>}
 
           {/* Floating Action Bar on Mobile View */}
           <div className="md:hidden absolute right-3 bottom-14 flex flex-col items-center gap-3 z-30">

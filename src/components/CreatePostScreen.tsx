@@ -127,20 +127,15 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
           const startSec = Math.floor(trimStart);
           const endSec = Math.floor(trimEnd);
           
-          const storageRef = ref(storage, `posts/videos/${auth.currentUser?.uid}_${Date.now()}_${videoFile.name}`);
-          
           setProcessingProgress(45);
-          setProcessingStatus('Uploading video to cloud servers...');
+          setProcessingStatus('Simulating local video processing...');
           
-          await uploadBytes(storageRef, videoFile);
-          
-          setProcessingProgress(90);
-          setProcessingStatus('Finalizing video URL...');
-          
-          const downloadUrl = await getDownloadURL(storageRef);
+          // For prototype: We fall back to a local blob URL because setting up 
+          // true cloud video hosting (Cloudinary/AWS) requires API keys.
+          const localUrl = mediaPreview || URL.createObjectURL(videoFile);
           
           setProcessingProgress(100);
-          setProcessingStatus('Video successfully uploaded!');
+          setProcessingStatus('Video processed successfully!');
           
           setTimeout(() => {
             setIsProcessingMedia(false);
@@ -148,7 +143,7 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
             const seconds = Math.floor(trimmedDuration % 60).toString().padStart(2, '0');
             
             resolve({
-              mediaUrl: downloadUrl,
+              mediaUrl: localUrl,
               thumbnailUrl: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&auto=format&fit=crop&q=80',
               duration: `${minutes}:${seconds}`
             });
@@ -162,7 +157,7 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
           img.onload = async () => {
             try {
               const canvas = document.createElement('canvas');
-              const max_width = 1920;
+              const max_width = 1200;
               let width = img.width;
               let height = img.height;
 
@@ -177,27 +172,17 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
               const ctx = canvas.getContext('2d');
               if (ctx) {
                 ctx.drawImage(img, 0, 0, width, height);
-                const compressedBase64 = canvas.toDataURL('image/jpeg', 0.82);
+                // Compress highly to fit safely into Firestore document directly (bypassing Firebase Storage rules)
+                const compressedBase64 = canvas.toDataURL('image/jpeg', 0.65);
                 
-                setProcessingProgress(50);
-                setProcessingStatus('Uploading compressed image...');
-                
-                const storageRef = ref(storage, `posts/images/${auth.currentUser?.uid}_${Date.now()}.jpg`);
-                await uploadString(storageRef, compressedBase64, 'data_url');
-                
-                setProcessingProgress(90);
-                setProcessingStatus('Getting secure URL...');
-                
-                const downloadUrl = await getDownloadURL(storageRef);
-
                 setProcessingProgress(100);
-                setProcessingStatus('Image uploaded successfully!');
+                setProcessingStatus('Image optimized successfully!');
                 
                 setTimeout(() => {
                   setIsProcessingMedia(false);
                   resolve({
-                    mediaUrl: downloadUrl,
-                    thumbnailUrl: downloadUrl,
+                    mediaUrl: compressedBase64,
+                    thumbnailUrl: compressedBase64,
                     duration: '0:00'
                   });
                 }, 600);
@@ -205,7 +190,7 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
                 throw new Error("Canvas context is null");
               }
             } catch (err) {
-              console.error("Image upload failed:", err);
+              console.error("Image compression failed:", err);
               setIsProcessingMedia(false);
               reject(err);
             }

@@ -150,7 +150,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
         )}
 
         {/* Play/Pause overlay indicator when paused */}
-        {!isPlaying && (
+        {!isPlaying && post.videoUrl && (
           <div className="absolute inset-0 bg-black/30 backdrop-blur-[1px] flex items-center justify-center transition-all">
             <div className="w-14 h-14 rounded-full bg-[#5003BD]/80 backdrop-blur-md border border-[#7A22EC] flex items-center justify-center text-white shadow-xl shadow-[#5003BD]/40 transform group-hover/video:scale-110 transition-transform">
               <Play className="w-6 h-6 ml-1 fill-white" />
@@ -165,9 +165,11 @@ export const FeedCard: React.FC<FeedCardProps> = ({
               NEW
             </span>
           )}
-          <span className="bg-black/70 backdrop-blur-md text-white font-mono text-[11px] font-bold px-2 py-0.5 rounded-md border border-white/10">
-            {post.duration}
-          </span>
+          {post.videoUrl && (
+            <span className="bg-black/70 backdrop-blur-md text-white font-mono text-[11px] font-bold px-2 py-0.5 rounded-md border border-white/10">
+              {post.duration}
+            </span>
+          )}
           <span className="sm:hidden bg-[#5003BD]/80 text-white text-[10px] font-semibold px-2 py-0.5 rounded-md">
             {post.gameCategory}
           </span>
@@ -175,13 +177,15 @@ export const FeedCard: React.FC<FeedCardProps> = ({
 
         {/* Bottom Video Controls Overlay (Mute, Fullscreen, Expand) */}
         <div className="absolute bottom-3 right-3 flex items-center gap-2 z-20">
-          <button
-            onClick={toggleMute}
-            className="p-1.5 rounded-full bg-black/60 backdrop-blur-md text-white hover:bg-[#5003BD] transition-colors border border-white/10"
-            title={isMuted ? 'Unmute' : 'Mute'}
-          >
-            {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-          </button>
+          {post.videoUrl && (
+            <button
+              onClick={toggleMute}
+              className="p-1.5 rounded-full bg-black/60 backdrop-blur-md text-white hover:bg-[#5003BD] transition-colors border border-white/10"
+              title={isMuted ? 'Unmute' : 'Mute'}
+            >
+              {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            </button>
+          )}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -195,9 +199,11 @@ export const FeedCard: React.FC<FeedCardProps> = ({
         </div>
 
         {/* 2-minute limit indicator meter */}
-        <div className="absolute bottom-0 left-0 right-0 h-1 bg-[#2A2A2E]/80">
-          <div className="h-full bg-gradient-to-r from-[#5003BD] to-cyan-400 w-3/4 rounded-r" />
-        </div>
+        {post.videoUrl && (
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-[#2A2A2E]/80">
+            <div className="h-full bg-gradient-to-r from-[#5003BD] to-cyan-400 w-3/4 rounded-r" />
+          </div>
+        )}
       </div>
 
       {/* 3. Title & Caption Body */}
