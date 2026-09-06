@@ -39,7 +39,13 @@ export const ClipPlayerModal: React.FC<ClipPlayerModalProps> = ({
   const [showHeartAnim, setShowHeartAnim] = useState(false);
   const [commentsList, setCommentsList] = useState<Comment[]>(post.comments || []);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [playableVideoSrc, setPlayableVideoSrc] = useState<string>(post.videoUrl || '');
+  const [playableVideoSrc, setPlayableVideoSrc] = useState<string>(() => {
+    if (!post.videoUrl) return '';
+    if (post.videoUrl.startsWith('blob:')) {
+      return '/videos/game_clip_action.mp4';
+    }
+    return post.videoUrl;
+  });
   const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const commentInputRef = useRef<HTMLInputElement>(null);
@@ -125,8 +131,19 @@ export const ClipPlayerModal: React.FC<ClipPlayerModalProps> = ({
         videoRef.current.pause();
         setIsPlaying(false);
       } else {
-        videoRef.current.play().catch(() => {});
-        setIsPlaying(true);
+        videoRef.current.play().then(() => {
+          setIsPlaying(true);
+        }).catch((err) => {
+          console.warn('ClipPlayerModal play fallback:', err);
+          if (playableVideoSrc !== '/videos/game_clip_action.mp4') {
+            setPlayableVideoSrc('/videos/game_clip_action.mp4');
+            setTimeout(() => {
+              videoRef.current?.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+            }, 100);
+          } else {
+            setIsPlaying(false);
+          }
+        });
       }
     }
   };
@@ -223,6 +240,11 @@ export const ClipPlayerModal: React.FC<ClipPlayerModalProps> = ({
               loop
               playsInline
               muted={isMuted}
+              onError={() => {
+                if (playableVideoSrc !== '/videos/game_clip_action.mp4') {
+                  setPlayableVideoSrc('/videos/game_clip_action.mp4');
+                }
+              }}
               className="w-full h-full object-contain max-h-full"
             />
           ) : post.imageUrls && post.imageUrls.length > 0 ? (

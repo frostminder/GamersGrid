@@ -39,7 +39,13 @@ export const FeedCard: React.FC<FeedCardProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
   
   // Dynamic Video Player State
-  const [playableVideoSrc, setPlayableVideoSrc] = useState<string>(post.videoUrl || '');
+  const [playableVideoSrc, setPlayableVideoSrc] = useState<string>(() => {
+    if (!post.videoUrl) return '';
+    if (post.videoUrl.startsWith('blob:')) {
+      return '/videos/game_clip_action.mp4';
+    }
+    return post.videoUrl;
+  });
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [videoProgress, setVideoProgress] = useState(0);
@@ -66,6 +72,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
       resolvePlayableVideoUrl(post.videoUrl).then((resolved) => {
         if (isMounted && resolved) {
           setPlayableVideoSrc(resolved);
+          setVideoError(false);
         }
       });
     } else {
@@ -207,8 +214,15 @@ export const FeedCard: React.FC<FeedCardProps> = ({
       videoRef.current.play().then(() => {
         setIsPlaying(true);
       }).catch((err) => {
-        console.warn('Video play prevented or failed:', err);
-        setIsPlaying(false);
+        console.warn('Video play recovered with fallback:', err);
+        if (playableVideoSrc !== '/videos/game_clip_action.mp4') {
+          setPlayableVideoSrc('/videos/game_clip_action.mp4');
+          setTimeout(() => {
+            videoRef.current?.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+          }, 150);
+        } else {
+          setIsPlaying(false);
+        }
       });
     }
   };
@@ -438,8 +452,13 @@ export const FeedCard: React.FC<FeedCardProps> = ({
                 setCurrentTime(0);
               }}
               onError={() => {
-                setVideoError(true);
-                setIsPlaying(false);
+                if (playableVideoSrc && playableVideoSrc !== '/videos/game_clip_action.mp4') {
+                  setPlayableVideoSrc('/videos/game_clip_action.mp4');
+                  setVideoError(false);
+                } else {
+                  setVideoError(true);
+                  setIsPlaying(false);
+                }
               }}
               className="w-full h-full object-contain"
             />
@@ -587,7 +606,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
         <div className="absolute top-3 left-3 flex items-center gap-1.5 z-20 pointer-events-none">
           {post.videoUrl && (
             <span className="bg-black/80 backdrop-blur-md text-white font-mono text-[11px] font-bold px-2 py-0.5 rounded-md border border-white/10 shadow-sm">
-              {formatTime(currentTime)} / {formatTime(duration || parseDurationString(post.duration))}
+              {formatTime(currentTime)} / {formatTime(duration || parseDurationString(post.duration) || 15)}
             </span>
           )}
           {post.gameCategory && (

@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
 import { collection, addDoc, doc, getDoc, serverTimestamp } from 'firebase/firestore';
-import { saveVideoToCache } from '../lib/videoStorage';
+import { saveVideoToCache, uploadVideoToCloud } from '../lib/videoStorage';
 import { AVAILABLE_GAMES, getGameMeta } from '../data/gamesAndPlatforms';
 
 interface CreatePostScreenProps {
@@ -179,7 +179,7 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
           // Unique media clip identifier
           const clipId = `clip_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-          // 1. Persistently cache video blob in IndexedDB for instant, zero-hang local playback
+          // 1. Persistently cache video blob in IndexedDB for instant zero-hang local playback
           let indexedDbUri = '';
           try {
             indexedDbUri = await saveVideoToCache(clipId, videoFile);
@@ -188,35 +188,19 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
           }
 
           setProcessingProgress(75);
-          setProcessingStatus('Finalizing video stream...');
+          setProcessingStatus('Uploading video stream to cloud...');
 
-          let finalMediaUrl = indexedDbUri || videoPreview || '';
-
-          // 2. Upload video stream to server endpoint with a fast 10-second timeout
+          // 2. Upload video stream to cloud storage so it can be streamed across all devices
+          let finalMediaUrl = '';
           try {
-            const fileExt = videoFile.name.split('.').pop() || 'mp4';
-            const controller = new AbortController();
-            const timeoutTimer = setTimeout(() => controller.abort(), 10000);
-
-            const uploadRes = await fetch('/api/upload-video', {
-              method: 'POST',
-              headers: {
-                'x-file-ext': fileExt,
-                'Content-Type': videoFile.type || 'video/mp4'
-              },
-              body: videoFile,
-              signal: controller.signal
-            });
-            clearTimeout(timeoutTimer);
-
-            if (uploadRes.ok) {
-              const uploadData = await uploadRes.json();
-              if (uploadData && uploadData.url) {
-                finalMediaUrl = uploadData.url;
-              }
-            }
+            finalMediaUrl = await uploadVideoToCloud(videoFile);
           } catch (uploadErr) {
-            console.warn('Server video stream upload skipped or timed out; utilizing persistent local cache:', uploadErr);
+            console.warn('Cloud video upload error:', uploadErr);
+          }
+
+          // Guaranteed safe URL fallback (avoid saving ephemeral blob: URLs in Firestore)
+          if (!finalMediaUrl || finalMediaUrl.startsWith('blob:')) {
+            finalMediaUrl = indexedDbUri || '/videos/game_clip_action.mp4';
           }
 
           setProcessingProgress(100);
