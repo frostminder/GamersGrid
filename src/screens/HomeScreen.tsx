@@ -30,6 +30,7 @@ export const HomeScreen: React.FC = () => {
   const [unreadMessagesCount, setUnreadMessagesCount] = useState<number>(0);
   const [postsList, setPostsList] = useState<any[]>([]);
   const [loadingPosts, setLoadingPosts] = useState<boolean>(true);
+  const [feedTab, setFeedTab] = useState<'foryou' | 'following'>('foryou');
   const [selectedClip, setSelectedClip] = useState<any | null>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -381,6 +382,20 @@ export const HomeScreen: React.FC = () => {
         
         {activeTab === 'home' && (
           <div className="flex flex-col gap-6">
+            <div className="flex bg-[#1a1a1a] p-1 rounded-xl w-full max-w-sm mx-auto border border-[#2a2a2e]">
+              <button 
+                onClick={() => setFeedTab('foryou')}
+                className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors ${feedTab === 'foryou' ? 'bg-[#5003BD] text-white' : 'text-[#888888] hover:text-white'}`}
+              >
+                For You
+              </button>
+              <button 
+                onClick={() => setFeedTab('following')}
+                className={`flex-1 py-2 text-sm font-bold rounded-lg transition-colors ${feedTab === 'following' ? 'bg-[#5003BD] text-white' : 'text-[#888888] hover:text-white'}`}
+              >
+                Following
+              </button>
+            </div>
             {/* Community Highlights & Clips Feed Section */}
             <div className="flex flex-col gap-4">
               {loadingPosts ? (
@@ -388,7 +403,7 @@ export const HomeScreen: React.FC = () => {
                   <div className="w-8 h-8 border-2 border-[#5003BD] border-t-transparent rounded-full animate-spin"></div>
                   <span className="text-[#888888] text-xs font-mono">LOADING CLIPS...</span>
                 </div>
-              ) : postsList.length === 0 ? (
+              ) : (feedTab === 'foryou' ? postsList : postsList.filter((p: any) => p.creator.isFollowing)).length === 0 ? (
                 <div className="bg-[#1a1a1a] border border-[#2a2a2e] rounded-3xl p-12 text-center flex flex-col items-center gap-4">
                   <span className="text-[#555555] text-5xl">🎬</span>
                   <div className="space-y-1">
@@ -404,7 +419,7 @@ export const HomeScreen: React.FC = () => {
                 </div>
               ) : (
                 <div className="flex flex-col gap-6">
-                  {postsList.map((post) => (
+                  {(feedTab === 'foryou' ? postsList : postsList.filter((p: any) => p.creator.isFollowing)).map((post) => (
                     <FeedCard 
                       key={post.id}
                       post={post}

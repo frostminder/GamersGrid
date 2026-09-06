@@ -22,9 +22,10 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
   const [selectedGame, setSelectedGame] = useState('Gaming');
   const [tags, setTags] = useState<string[]>([]);
   const [customTag, setCustomTag] = useState('');
-  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [videoFile, setVideoFile] = useState<File | null>(null);
-  const [mediaPreview, setMediaPreview] = useState<string | null>(null);
+  const [videoPreview, setVideoPreview] = useState<string | null>(null);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   
   // Trimming & Compression simulation state
   const [videoDuration, setVideoDuration] = useState<number>(0);
@@ -67,72 +68,86 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
     return () => {
       video.removeEventListener('timeupdate', handleTimeUpdate);
     };
-  }, [trimStart, trimEnd, postType, mediaPreview, videoFile]);
+  }, [trimStart, trimEnd, postType, videoPreview, videoFile]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files ? (Array.from(e.target.files) as File[]) : [];
+    if (!files.length) return;
 
     setError(null);
     setVideoDuration(0);
     setIsVideoTooLong(false);
 
-    if (file.type.startsWith('video/')) {
-      setPostType('clip');
-      setVideoFile(file);
-      setImageFile(null);
-      
-      const objectUrl = URL.createObjectURL(file);
-      setMediaPreview(objectUrl);
+    if (postType === 'clip') {
+      const file = files[0];
+      if (file.type.startsWith('video/')) {
+        setVideoFile(file);
+        setImageFiles([]);
+        setImagePreviews([]);
+        
+        const objectUrl = URL.createObjectURL(file);
+        setVideoPreview(objectUrl);
 
-      // Read video metadata for length and resolution
-      const videoElement = document.createElement('video');
-      videoElement.preload = 'metadata';
-      videoElement.src = objectUrl;
-      videoElement.onloadedmetadata = () => {
-        const duration = videoElement.duration;
-        setVideoDuration(duration);
-        setTrimStart(0);
-        // Default end trim limit at 2 minutes (120s) or full duration if less
-        setTrimEnd(Math.min(duration, 120));
-        if (duration > 120) {
-          setIsVideoTooLong(true);
-        }
-      };
-    } else if (file.type.startsWith('image/')) {
-      setPostType('image');
-      setImageFile(file);
-      setVideoFile(null);
-      
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setMediaPreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+        // Read video metadata for length and resolution
+        const videoElement = document.createElement('video');
+        videoElement.preload = 'metadata';
+        videoElement.src = objectUrl;
+        videoElement.onloadedmetadata = () => {
+          const duration = videoElement.duration;
+          setVideoDuration(duration);
+          setTrimStart(0);
+          setTrimEnd(Math.min(duration, 120));
+          if (duration > 120) {
+            setIsVideoTooLong(true);
+          }
+        };
+      } else {
+        setError('Please select a valid video file.');
+      }
     } else {
-      setError('Please select a valid image or video file.');
+      const newImages = files.filter(f => f.type.startsWith('image/'));
+      if (!newImages.length) {
+        setError('Please select valid image files.');
+        return;
+      }
+      
+      const totalImages = imageFiles.length + newImages.length;
+      if (totalImages > 10) {
+        setError('You can only upload up to 10 images.');
+        newImages.splice(10 - imageFiles.length);
+      }
+      
+      setImageFiles(prev => [...prev, ...newImages]);
+      setVideoFile(null);
+      setVideoPreview(null);
+      
+      newImages.forEach(file => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setImagePreviews(prev => [...prev, reader.result as string]);
+        };
+        reader.readAsDataURL(file);
+      });
     }
   };
 
   const trimmedDuration = Math.max(0, trimEnd - trimStart);
   const isTrimTooLong = trimmedDuration > 120;
 
-  const compressAndProcessMedia = async (): Promise<{ mediaUrl: string; thumbnailUrl: string; duration: string }> => {
+  const compressAndProcessMedia = async (): Promise<{ mediaUrl: string; thumbnailUrl: string; duration: string; imageUrls?: string[] }> => {
     return new Promise(async (resolve, reject) => {
       setIsProcessingMedia(true);
       setProcessingProgress(15);
       
       try {
-        if (videoFile) {
+        if (postType === 'clip' && videoFile) {
           const startSec = Math.floor(trimStart);
           const endSec = Math.floor(trimEnd);
           
           setProcessingProgress(45);
           setProcessingStatus('Simulating local video processing...');
           
-          // For prototype: We fall back to a local blob URL because setting up 
-          // true cloud video hosting (Cloudinary/AWS) requires API keys.
-          const localUrl = mediaPreview || URL.createObjectURL(videoFile);
+          const localUrl = videoPreview || URL.createObjectURL(videoFile);
           
           setProcessingProgress(100);
           setProcessingStatus('Video processed successfully!');
@@ -149,68 +164,66 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
             });
           }, 800);
           
-        } else if (imageFile && mediaPreview) {
-          setProcessingStatus('Compressing image size via HTML5 canvas...');
+        } else if (postType === 'image' && imageFiles.length > 0) {
+          setProcessingStatus('Compressing images...');
           
-          const img = new window.Image();
-          img.src = mediaPreview;
-          img.onload = async () => {
-            try {
-              const canvas = document.createElement('canvas');
-              const max_width = 1200;
-              let width = img.width;
-              let height = img.height;
+          const compressedImages: string[] = [];
+          
+          for (let i = 0; i < imagePreviews.length; i++) {
+            setProcessingProgress(15 + Math.floor((i / imagePreviews.length) * 80));
+            
+            const compressed = await new Promise<string>((res, rej) => {
+              const img = new window.Image();
+              img.src = imagePreviews[i];
+              img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const max_width = 1200;
+                let width = img.width;
+                let height = img.height;
 
-              if (width > max_width) {
-                height = Math.round((height * max_width) / width);
-                width = max_width;
-              }
+                if (width > max_width) {
+                  height = Math.round((height * max_width) / width);
+                  width = max_width;
+                }
+                canvas.width = width;
+                canvas.height = height;
 
-              canvas.width = width;
-              canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                  ctx.drawImage(img, 0, 0, width, height);
+                  res(canvas.toDataURL('image/jpeg', 0.65));
+                } else {
+                  rej(new Error("Canvas context is null"));
+                }
+              };
+              img.onerror = () => rej(new Error("Image load failed"));
+            });
+            compressedImages.push(compressed);
+          }
 
-              const ctx = canvas.getContext('2d');
-              if (ctx) {
-                ctx.drawImage(img, 0, 0, width, height);
-                // Compress highly to fit safely into Firestore document directly (bypassing Firebase Storage rules)
-                const compressedBase64 = canvas.toDataURL('image/jpeg', 0.65);
-                
-                setProcessingProgress(100);
-                setProcessingStatus('Image optimized successfully!');
-                
-                setTimeout(() => {
-                  setIsProcessingMedia(false);
-                  resolve({
-                    mediaUrl: compressedBase64,
-                    thumbnailUrl: compressedBase64,
-                    duration: '0:00'
-                  });
-                }, 600);
-              } else {
-                throw new Error("Canvas context is null");
-              }
-            } catch (err) {
-              console.error("Image compression failed:", err);
-              setIsProcessingMedia(false);
-              reject(err);
-            }
-          };
-          img.onerror = () => {
+          setProcessingProgress(100);
+          setProcessingStatus('Images optimized successfully!');
+          
+          setTimeout(() => {
             setIsProcessingMedia(false);
-            reject(new Error("Failed to load image for compression"));
-          };
+            resolve({
+              mediaUrl: compressedImages[0],
+              thumbnailUrl: compressedImages[0],
+              duration: '0:00',
+              imageUrls: compressedImages
+            });
+          }, 600);
+          
         } else {
           setIsProcessingMedia(false);
-          resolve({ mediaUrl: '', thumbnailUrl: '', duration: '0:00' });
+          reject(new Error("No media provided"));
         }
-      } catch (error) {
-        console.error("Upload failed:", error);
+      } catch (err) {
         setIsProcessingMedia(false);
-        reject(error);
+        reject(err);
       }
     });
   };
-
   const handleToggleTag = (tag: string) => {
     if (tags.includes(tag)) {
       setTags(prev => prev.filter(t => t !== tag));
@@ -263,7 +276,7 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
       return;
     }
 
-    if (postType === 'image' && !imageFile) {
+    if (postType === 'image' && imageFiles.length === 0) {
       setError('Please attach an image.');
       return;
     }
@@ -291,6 +304,7 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
         gameCategory: selectedGame.trim(),
         videoUrl: postType === 'clip' ? mediaResults.mediaUrl : '',
         thumbnailUrl: mediaResults.thumbnailUrl,
+        imageUrls: postType === 'image' ? mediaResults.imageUrls : [],
         duration: mediaResults.duration,
         isNew: true,
         likesCount: 0,
@@ -357,9 +371,9 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
             type="button"
             onClick={() => {
               setPostType('clip');
-              setMediaPreview(null);
+              setVideoPreview(null); setImagePreviews([]);
               setVideoFile(null);
-              setImageFile(null);
+              setImageFiles([]);
               setVideoDuration(0);
               setIsVideoTooLong(false);
             }}
@@ -371,15 +385,15 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
             type="button"
             onClick={() => {
               setPostType('image');
-              setMediaPreview(null);
+              setVideoPreview(null); setImagePreviews([]);
               setVideoFile(null);
-              setImageFile(null);
+              setImageFiles([]);
               setVideoDuration(0);
               setIsVideoTooLong(false);
             }}
             className={`flex-1 py-3.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${postType === 'image' ? 'bg-[#5003BD] text-white shadow-md' : 'text-[#888888] hover:text-white hover:bg-[#232326]'}`}
           >
-            <Image className="w-4 h-4" /> Screenshot
+            <Image className="w-4 h-4" /> Image
           </button>
         </div>
 
@@ -388,52 +402,82 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
           <label className="text-sm font-bold text-[#aaaaaa]">ATTACH MEDIA</label>
           <div 
             onClick={() => fileInputRef.current?.click()}
-            className={`relative rounded-3xl border-2 border-dashed bg-[#1a1a1a] overflow-hidden min-h-[220px] flex flex-col items-center justify-center cursor-pointer p-6 group transition-all duration-300 hover:bg-[#1d1d21] ${mediaPreview ? 'border-[#5003BD]/50' : 'border-[#2a2a2e] hover:border-[#5003BD]/40'}`}
+            className={`relative rounded-3xl border-2 border-dashed bg-[#1a1a1a] overflow-hidden min-h-[220px] flex flex-col items-center justify-center cursor-pointer p-6 group transition-all duration-300 hover:bg-[#1d1d21] ${(videoPreview || imagePreviews.length > 0) ? 'border-[#5003BD]/50' : 'border-[#2a2a2e] hover:border-[#5003BD]/40'}`}
           >
             <input 
               ref={fileInputRef}
               type="file" 
               accept={postType === 'clip' ? 'video/*' : 'image/*'}
+              multiple={postType === 'image'}
               onChange={handleFileChange}
               className="hidden"
             />
 
-            {mediaPreview ? (
+            {(videoPreview || imagePreviews.length > 0) ? (
               <div className="w-full h-full absolute inset-0 flex flex-col items-center justify-center bg-black/40">
                 {postType === 'clip' ? (
                   <video 
                     ref={videoPreviewRef}
-                    src={mediaPreview} 
+                    src={videoPreview || undefined} 
                     className="w-full h-full object-contain bg-black"
                     controls
                     playsInline
                   />
                 ) : (
-                  <img 
-                    src={mediaPreview} 
-                    alt="Preview" 
-                    className="w-full h-full object-contain" 
-                  />
+                  <div className="w-full h-full flex items-center justify-center gap-2 overflow-x-auto p-4 snap-x">
+                    {imagePreviews.map((preview, idx) => (
+                      <div key={idx} className="relative h-full aspect-[9/16] sm:aspect-square flex-shrink-0 snap-center rounded-xl overflow-hidden border border-white/10 group/img">
+                        <img 
+                          src={preview} 
+                          alt={`Preview ${idx + 1}`} 
+                          className="w-full h-full object-cover" 
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setImageFiles(prev => prev.filter((_, i) => i !== idx));
+                            setImagePreviews(prev => prev.filter((_, i) => i !== idx));
+                          }}
+                          className="absolute top-2 right-2 p-1.5 bg-black/80 hover:bg-red-600 rounded-full opacity-0 group-hover/img:opacity-100 transition-all"
+                        >
+                          <Trash2 className="w-4 h-4 text-white" />
+                        </button>
+                      </div>
+                    ))}
+                    {imagePreviews.length < 10 && (
+                      <div 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          fileInputRef.current?.click();
+                        }}
+                        className="h-full aspect-[9/16] sm:aspect-square flex-shrink-0 rounded-xl border-2 border-dashed border-[#5003BD]/50 flex items-center justify-center bg-black/40 hover:bg-black/60 transition-colors cursor-pointer"
+                      >
+                        <Plus className="w-8 h-8 text-[#5003BD]" />
+                      </div>
+                    )}
+                  </div>
                 )}
                 
-                {/* Delete Button overlay */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setMediaPreview(null);
-                    setVideoFile(null);
-                    setImageFile(null);
-                    setVideoDuration(0);
-                    setIsVideoTooLong(false);
-                    setTrimStart(0);
-                    setTrimEnd(0);
-                  }}
-                  className="absolute top-4 right-4 p-2.5 bg-black/80 hover:bg-red-600 rounded-full transition-colors group/del"
-                  title="Remove file"
-                >
-                  <Trash2 className="w-5 h-5 text-gray-300 group-hover/del:text-white" />
-                </button>
+                {/* Delete Button overlay (only for video) */}
+                {postType === 'clip' && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setVideoPreview(null);
+                      setVideoFile(null);
+                      setVideoDuration(0);
+                      setIsVideoTooLong(false);
+                      setTrimStart(0);
+                      setTrimEnd(0);
+                    }}
+                    className="absolute top-4 right-4 p-2.5 bg-black/80 hover:bg-red-600 rounded-full transition-colors group/del"
+                    title="Remove file"
+                  >
+                    <Trash2 className="w-5 h-5 text-gray-300 group-hover/del:text-white" />
+                  </button>
+                )}
               </div>
             ) : (
               <div className="text-center flex flex-col items-center gap-3">
@@ -446,7 +490,7 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
                 </div>
                 <div>
                   <p className="font-bold text-white text-sm">
-                    Drag and drop your {postType === 'clip' ? 'video' : 'screenshot'} here, or <span className="text-[#5003BD] hover:underline">browse</span>
+                    Drag and drop your {postType === 'clip' ? 'video' : 'image'} here, or <span className="text-[#5003BD] hover:underline">browse</span>
                   </p>
                   <p className="text-xs text-[#888888] mt-1.5 leading-relaxed">
                     {postType === 'clip' ? 'MP4, MOV up to 2 min (1080p Cap)' : 'PNG, JPG, WEBP compressed locally'}
@@ -643,7 +687,7 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
               onChange={(e) => setCaption(e.target.value)}
               maxLength={400}
               rows={4}
-              placeholder={postType === 'clip' ? "Describe this highlight or rotation guide (use #tags)..." : "Write your thoughts or share a screenshot details..."}
+              placeholder={postType === 'clip' ? "Describe this highlight or rotation guide (use #tags)..." : "Write your thoughts or share image details..."}
               className="w-full bg-[#121212] text-white text-sm px-4 py-3 rounded-xl border border-[#2a2a2e] focus:outline-none focus:border-[#5003BD] transition-colors resize-none leading-relaxed"
             />
             <span className="text-[10px] text-right text-[#555555] font-mono">{caption.length}/400</span>

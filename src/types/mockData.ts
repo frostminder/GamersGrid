@@ -34,6 +34,7 @@ export interface Post {
   gameCategory: 'Blood Strike' | 'Warzone' | 'PUBG Mobile' | 'Valorant' | 'Apex Legends';
   videoUrl: string;
   thumbnailUrl: string;
+  imageUrls?: string[];
   duration: string; // e.g. "1:45"
   isNew?: boolean;
   likesCount: number;
