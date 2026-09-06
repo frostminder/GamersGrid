@@ -42,6 +42,11 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoPreviewRef = useRef<HTMLVideoElement>(null);
 
+  // Always ensure posts screen starts at the top of the page on mount
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, []);
+
   // Auto scroll to error or status changes
   useEffect(() => {
     if (error) {
@@ -141,28 +146,65 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
       
       try {
         if (postType === 'clip' && videoFile) {
-          const startSec = Math.floor(trimStart);
-          const endSec = Math.floor(trimEnd);
-          
-          setProcessingProgress(45);
-          setProcessingStatus('Simulating local video processing...');
-          
-          const localUrl = videoPreview || URL.createObjectURL(videoFile);
-          
+          setProcessingProgress(35);
+          setProcessingStatus('Extracting video thumbnail...');
+
+          // Generate a real poster thumbnail from the video using canvas
+          let capturedThumbnail = 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&auto=format&fit=crop&q=80';
+          try {
+            if (videoPreviewRef.current && videoPreviewRef.current.videoWidth > 0) {
+              const canvas = document.createElement('canvas');
+              canvas.width = Math.min(videoPreviewRef.current.videoWidth, 800);
+              canvas.height = Math.round((canvas.width * videoPreviewRef.current.videoHeight) / videoPreviewRef.current.videoWidth);
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                ctx.drawImage(videoPreviewRef.current, 0, 0, canvas.width, canvas.height);
+                capturedThumbnail = canvas.toDataURL('image/jpeg', 0.8);
+              }
+            }
+          } catch (thumbErr) {
+            console.warn('Could not extract video canvas thumbnail:', thumbErr);
+          }
+
+          setProcessingProgress(55);
+          setProcessingStatus('Uploading clip to storage...');
+
+          let persistentMediaUrl = '';
+          try {
+            const user = auth.currentUser;
+            const fileExt = videoFile.name.split('.').pop() || 'mp4';
+            const storagePath = `clips/${user?.uid || 'anonymous'}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+            const storageRefObj = ref(storage, storagePath);
+            const uploadSnapshot = await uploadBytes(storageRefObj, videoFile);
+            persistentMediaUrl = await getDownloadURL(uploadSnapshot.ref);
+          } catch (storageErr) {
+            console.warn('Firebase Storage upload failed, utilizing persistent data URL fallback:', storageErr);
+            if (videoFile.size < 8 * 1024 * 1024) {
+              persistentMediaUrl = await new Promise<string>((res, rej) => {
+                const reader = new FileReader();
+                reader.onloadend = () => res(reader.result as string);
+                reader.onerror = rej;
+                reader.readAsDataURL(videoFile);
+              });
+            } else {
+              persistentMediaUrl = videoPreview || URL.createObjectURL(videoFile);
+            }
+          }
+
           setProcessingProgress(100);
           setProcessingStatus('Video processed successfully!');
-          
+
           setTimeout(() => {
             setIsProcessingMedia(false);
             const minutes = Math.floor(trimmedDuration / 60);
             const seconds = Math.floor(trimmedDuration % 60).toString().padStart(2, '0');
             
             resolve({
-              mediaUrl: localUrl,
-              thumbnailUrl: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&auto=format&fit=crop&q=80',
+              mediaUrl: persistentMediaUrl,
+              thumbnailUrl: capturedThumbnail,
               duration: `${minutes}:${seconds}`
             });
-          }, 800);
+          }, 600);
           
         } else if (postType === 'image' && imageFiles.length > 0) {
           setProcessingStatus('Compressing images...');

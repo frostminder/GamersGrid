@@ -203,11 +203,13 @@ export const SearchScreen: React.FC<{
               <FeedCard 
                 key={post.id}
                 post={post}
+                currentUserId={auth.currentUser?.uid}
+                currentUsername={auth.currentUser?.displayName || auth.currentUser?.email?.split('@')[0]}
+                isFollowing={followingMap[post.creator.id]}
                 onLike={(id) => onLikePost?.(id)}
                 onFollow={(id) => onFollowCreator?.(id)}
                 onOpenComments={(p) => onOpenClipModal?.(p)}
                 onOpenClipModal={(p) => onOpenClipModal?.(p)}
-                onTipCoins={() => {}}
                 onSave={() => {}}
               />
             ))}

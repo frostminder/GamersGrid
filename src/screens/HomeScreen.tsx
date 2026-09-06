@@ -4,7 +4,7 @@ import { GamersGridLogo } from '../components/GamersGridLogo';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { auth, db } from '../lib/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { doc, onSnapshot, collection, query, where, getDocs, addDoc, updateDoc, orderBy, serverTimestamp, limit } from 'firebase/firestore';
+import { doc, onSnapshot, collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, orderBy, serverTimestamp, limit } from 'firebase/firestore';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ProfileTab } from '../components/ProfileTab';
 import { TournamentHub } from '../components/TournamentHub';
@@ -16,6 +16,7 @@ import { CreatePostScreen } from '../components/CreatePostScreen';
 import { FeedCard } from '../components/FeedCard';
 import { ClipPlayerModal } from '../components/ClipPlayerModal';
 import { startPresenceTracking } from '../lib/presenceService';
+import { followUser, unfollowUser } from '../lib/userService';
 import { MOCK_TOURNAMENTS, INITIAL_WALLET, INITIAL_POSTS, Post } from '../types/mockData';
 
 export const HomeScreen: React.FC = () => {
@@ -31,20 +32,30 @@ export const HomeScreen: React.FC = () => {
   const [postsList, setPostsList] = useState<any[]>([]);
   const [loadingPosts, setLoadingPosts] = useState<boolean>(true);
   const [feedTab, setFeedTab] = useState<'foryou' | 'following'>('foryou');
+  const [followingSet, setFollowingSet] = useState<Set<string>>(new Set());
   const [selectedClip, setSelectedClip] = useState<any | null>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const activeTab = searchParams.get('tab') || 'home';
 
   const handleTabChange = (tab: string) => {
-    if (tab === activeTab) return;
+    if (tab === activeTab) {
+      window.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+      return;
+    }
     if (tab === 'home') {
       navigate('/home');
     } else {
       navigate(`/home?tab=${tab}`);
     }
     setIsChatActive(false);
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   };
+
+  // Ensure view resets to top whenever the active tab changes (e.g. opening create post screen)
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [activeTab]);
 
   useEffect(() => {
     let unsubscribeSnapshot: () => void;
@@ -147,7 +158,33 @@ export const HomeScreen: React.FC = () => {
     };
   }, []);
 
-  // Listen and seed posts
+  // Listen to user's following list in real-time
+  useEffect(() => {
+    if (!user) {
+      setFollowingSet(new Set());
+      return;
+    }
+    const followsQ = query(
+      collection(db, 'follows'),
+      where('followerId', '==', user.uid)
+    );
+    const unsubFollows = onSnapshot(followsQ, (snap) => {
+      const ids = new Set<string>();
+      snap.forEach((d) => {
+        const data = d.data();
+        if (data.followingId) {
+          ids.add(data.followingId);
+        }
+      });
+      setFollowingSet(ids);
+    }, (err) => {
+      console.error('Error listening to user follows:', err);
+    });
+
+    return () => unsubFollows();
+  }, [user]);
+
+  // Listen to posts and clean up any leftover mock posts from Firestore
   useEffect(() => {
     let unsubscribePosts: () => void;
 
@@ -155,8 +192,30 @@ export const HomeScreen: React.FC = () => {
       try {
         setLoadingPosts(true);
         
+        // Also perform an initial scan of all posts to purge any mock-up posts
+        getDocs(collection(db, 'posts')).then((allSnap) => {
+          allSnap.forEach((docSnap) => {
+            const data = docSnap.data();
+            const creatorId = data.creator?.id;
+            const creatorUsername = data.creator?.username;
+
+            const isMock = 
+              docSnap.id.startsWith('post_') ||
+              docSnap.id.startsWith('mock_') ||
+              data.isMock === true ||
+              !data.creator ||
+              !creatorId ||
+              creatorId.startsWith('usr_') ||
+              ['system', 'usr_1', 'usr_2', 'usr_3', 'usr_4', 'usr_5', 'usr_6', 'usr_7'].includes(creatorId) ||
+              ['ShadowReaper', 'WarzoneTactics', 'ZeroGravity', 'CyberRonin', 'KiraGhost', 'ViperValk', 'ApexPredator'].includes(creatorUsername);
+
+            if (isMock && auth.currentUser) {
+              deleteDoc(doc(db, 'posts', docSnap.id)).catch(() => {});
+            }
+          });
+        }).catch(() => {});
+
         // Setup real-time listener for posts, ordering by createdAtTimestamp descending
-        // Only load posts that actually have a timestamp (ignores old mockups if any are malformed)
         const postsQuery = query(
           collection(db, 'posts'),
           orderBy('createdAtTimestamp', 'desc'),
@@ -167,9 +226,24 @@ export const HomeScreen: React.FC = () => {
           const loaded: any[] = [];
           snap.forEach((docSnap) => {
             const data = docSnap.data();
-            // Filter out old mockup seeded posts that might lack real creator data or have mock 'isNew' flags
-            // if we want to ensure only real user posts show up
-            if (data.creator && !['system', 'usr_1', 'usr_2', 'usr_3', 'usr_4'].includes(data.creator.id)) {
+            const creatorId = data.creator?.id;
+            const creatorUsername = data.creator?.username;
+
+            const isMock = 
+              docSnap.id.startsWith('post_') ||
+              docSnap.id.startsWith('mock_') ||
+              data.isMock === true ||
+              !data.creator ||
+              !creatorId ||
+              creatorId.startsWith('usr_') ||
+              ['system', 'usr_1', 'usr_2', 'usr_3', 'usr_4', 'usr_5', 'usr_6', 'usr_7'].includes(creatorId) ||
+              ['ShadowReaper', 'WarzoneTactics', 'ZeroGravity', 'CyberRonin', 'KiraGhost', 'ViperValk', 'ApexPredator'].includes(creatorUsername);
+
+            if (isMock) {
+              if (auth.currentUser) {
+                deleteDoc(doc(db, 'posts', docSnap.id)).catch(() => {});
+              }
+            } else {
               loaded.push({
                 ...data,
                 id: docSnap.id
@@ -203,7 +277,7 @@ export const HomeScreen: React.FC = () => {
       if (pIndex === -1) return;
       const targetPost = postsList[pIndex];
       const newIsLiked = !targetPost.isLiked;
-      const newLikesCount = targetPost.likesCount + (newIsLiked ? 1 : -1);
+      const newLikesCount = Math.max(0, (targetPost.likesCount || 0) + (newIsLiked ? 1 : -1));
 
       // Optimistic update
       setPostsList(prev => prev.map(p => p.id === postId ? { ...p, isLiked: newIsLiked, likesCount: newLikesCount } : p));
@@ -222,32 +296,30 @@ export const HomeScreen: React.FC = () => {
   };
 
   const handleFollowCreator = async (creatorId: string) => {
-    try {
-      setPostsList(prev => prev.map(p => {
-        if (p.creator.id === creatorId) {
-          const currentFollowState = p.creator.isFollowing;
-          return {
-            ...p,
-            creator: {
-              ...p.creator,
-              isFollowing: !currentFollowState
-            }
-          };
-        }
-        return p;
-      }));
+    if (!user) return;
+    if (creatorId === user.uid) {
+      // Prevent user from following themselves
+      return;
+    }
 
-      if (selectedClip && selectedClip.creator.id === creatorId) {
-        setSelectedClip(prev => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            creator: {
-              ...prev.creator,
-              isFollowing: !prev.creator.isFollowing
-            }
-          };
-        });
+    try {
+      const isCurrentlyFollowing = followingSet.has(creatorId);
+
+      // Optimistic update of local following state
+      setFollowingSet(prev => {
+        const next = new Set(prev);
+        if (isCurrentlyFollowing) {
+          next.delete(creatorId);
+        } else {
+          next.add(creatorId);
+        }
+        return next;
+      });
+
+      if (isCurrentlyFollowing) {
+        await unfollowUser(user.uid, creatorId);
+      } else {
+        await followUser(user.uid, creatorId);
       }
     } catch (err) {
       console.error('Error toggling follow:', err);
@@ -403,31 +475,40 @@ export const HomeScreen: React.FC = () => {
                   <div className="w-8 h-8 border-2 border-[#5003BD] border-t-transparent rounded-full animate-spin"></div>
                   <span className="text-[#888888] text-xs font-mono">LOADING CLIPS...</span>
                 </div>
-              ) : (feedTab === 'foryou' ? postsList : postsList.filter((p: any) => p.creator.isFollowing)).length === 0 ? (
+              ) : (feedTab === 'foryou' ? postsList : postsList.filter((p: any) => followingSet.has(p.creator?.id))).length === 0 ? (
                 <div className="bg-[#1a1a1a] border border-[#2a2a2e] rounded-3xl p-12 text-center flex flex-col items-center gap-4">
                   <span className="text-[#555555] text-5xl">🎬</span>
                   <div className="space-y-1">
-                    <h4 className="font-bold text-white text-base">No community clips yet</h4>
-                    <p className="text-xs text-[#888888] max-w-sm">Be the first to upload a clip, gameplay highlight, or esports commentary!</p>
+                    <h4 className="font-bold text-white text-base">
+                      {feedTab === 'following' ? 'No posts from followed creators' : 'No community clips yet'}
+                    </h4>
+                    <p className="text-xs text-[#888888] max-w-sm">
+                      {feedTab === 'following'
+                        ? 'Follow creators in the For You tab or search to see their latest clips and posts here!'
+                        : 'Be the first to upload a clip, gameplay highlight, or esports commentary!'}
+                    </p>
                   </div>
                   <button 
-                    onClick={() => handleTabChange('create')}
-                    className="bg-[#5003BD] hover:bg-[#630cdb] text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors mt-2"
+                    onClick={() => handleTabChange(feedTab === 'following' ? 'home' : 'create')}
+                    className="bg-[#5003BD] hover:bg-[#630cdb] text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors mt-2 cursor-pointer"
                   >
-                    Post a Clip
+                    {feedTab === 'following' ? 'Explore For You' : 'Post a Clip'}
                   </button>
                 </div>
               ) : (
                 <div className="flex flex-col gap-6">
-                  {(feedTab === 'foryou' ? postsList : postsList.filter((p: any) => p.creator.isFollowing)).map((post) => (
+                  {(feedTab === 'foryou' ? postsList : postsList.filter((p: any) => followingSet.has(p.creator?.id))).map((post) => (
                     <FeedCard 
                       key={post.id}
                       post={post}
+                      currentUserId={user?.uid}
+                      currentUsername={userProfile?.gamertag || user?.email?.split('@')[0]}
+                      isFollowing={followingSet.has(post.creator.id)}
                       onLike={handleLikePost}
                       onFollow={handleFollowCreator}
                       onOpenComments={(p) => setSelectedClip(p)}
                       onOpenClipModal={(p) => setSelectedClip(p)}
-                      onTipCoins={handleTipCoins}
+                      onAddComment={handleAddComment}
                       onSave={handleSavePost}
                     />
                   ))}
@@ -498,11 +579,13 @@ export const HomeScreen: React.FC = () => {
       {selectedClip && (
         <ClipPlayerModal 
           post={selectedClip}
+          currentUserId={user?.uid}
+          currentUsername={userProfile?.gamertag || user?.email?.split('@')[0]}
+          isFollowing={followingSet.has(selectedClip.creator?.id)}
           onClose={() => setSelectedClip(null)}
           onLike={handleLikePost}
           onFollow={handleFollowCreator}
           onAddComment={handleAddComment}
-          onTipCoins={handleTipCoins}
           onSave={handleSavePost}
         />
       )}
