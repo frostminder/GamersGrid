@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   X, Heart, MessageSquare, Share2, Bookmark, Volume2, VolumeX, 
-  Send, ShieldCheck, Play, Check
+  Send, ShieldCheck, Play, Check, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { Post, Comment } from '../types/mockData';
 import { auth } from '../lib/firebase';
+import { resolvePlayableVideoUrl } from '../lib/videoStorage';
 
 interface ClipPlayerModalProps {
   post: Post | null;
@@ -38,12 +39,76 @@ export const ClipPlayerModal: React.FC<ClipPlayerModalProps> = ({
   const [showHeartAnim, setShowHeartAnim] = useState(false);
   const [commentsList, setCommentsList] = useState<Comment[]>(post.comments || []);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [playableVideoSrc, setPlayableVideoSrc] = useState<string>(post.videoUrl || '');
+  const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const commentInputRef = useRef<HTMLInputElement>(null);
+  const imageSliderRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setCommentsList(post.comments || []);
   }, [post.comments]);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (post.videoUrl) {
+      resolvePlayableVideoUrl(post.videoUrl).then((resolved) => {
+        if (isMounted && resolved) {
+          setPlayableVideoSrc(resolved);
+        }
+      });
+    } else {
+      setPlayableVideoSrc('');
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [post.videoUrl]);
+
+  const handleImageScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const container = e.currentTarget;
+    if (container.clientWidth > 0) {
+      const idx = Math.round(container.scrollLeft / container.clientWidth);
+      if (idx !== activeImageIndex && idx >= 0 && (!post.imageUrls || idx < post.imageUrls.length)) {
+        setActiveImageIndex(idx);
+      }
+    }
+  };
+
+  const handlePrevImage = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (imageSliderRef.current && activeImageIndex > 0) {
+      const nextIdx = activeImageIndex - 1;
+      imageSliderRef.current.scrollTo({
+        left: nextIdx * imageSliderRef.current.clientWidth,
+        behavior: 'smooth'
+      });
+      setActiveImageIndex(nextIdx);
+    }
+  };
+
+  const handleNextImage = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (imageSliderRef.current && post.imageUrls && activeImageIndex < post.imageUrls.length - 1) {
+      const nextIdx = activeImageIndex + 1;
+      imageSliderRef.current.scrollTo({
+        left: nextIdx * imageSliderRef.current.clientWidth,
+        behavior: 'smooth'
+      });
+      setActiveImageIndex(nextIdx);
+    }
+  };
+
+  const handleSelectImageDot = (idx: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (imageSliderRef.current) {
+      imageSliderRef.current.scrollTo({
+        left: idx * imageSliderRef.current.clientWidth,
+        behavior: 'smooth'
+      });
+      setActiveImageIndex(idx);
+    }
+  };
 
   const isOwnPost = Boolean(
     currentUserId && (
@@ -152,7 +217,7 @@ export const ClipPlayerModal: React.FC<ClipPlayerModalProps> = ({
           {post.videoUrl ? (
             <video
               ref={videoRef}
-              src={post.videoUrl}
+              src={playableVideoSrc || post.videoUrl}
               poster={post.thumbnailUrl}
               autoPlay
               loop
@@ -161,20 +226,75 @@ export const ClipPlayerModal: React.FC<ClipPlayerModalProps> = ({
               className="w-full h-full object-contain max-h-full"
             />
           ) : post.imageUrls && post.imageUrls.length > 0 ? (
-            <div className="w-full h-full flex overflow-x-auto snap-x snap-mandatory scrollbar-hide relative group/slider">
-              {post.imageUrls.map((imgUrl, idx) => (
-                <img
-                  key={idx}
-                  src={imgUrl}
-                  alt={post.title || post.caption}
-                  className="w-full h-full object-contain max-h-full flex-shrink-0 snap-center"
-                />
-              ))}
+            /* Multi-image modal carousel with anchored dots and navigation */
+            <div className="w-full h-full relative group/slider flex items-center justify-center">
+              <div 
+                ref={imageSliderRef}
+                onScroll={handleImageScroll}
+                className="w-full h-full flex overflow-x-auto snap-x snap-mandatory scrollbar-hide"
+              >
+                {post.imageUrls.map((imgUrl, idx) => (
+                  <img
+                    key={idx}
+                    src={imgUrl}
+                    alt={post.title || post.caption || `Photo ${idx + 1}`}
+                    className="w-full h-full object-contain max-h-full flex-shrink-0 snap-center"
+                  />
+                ))}
+              </div>
+
+              {/* Navigation Arrows */}
               {post.imageUrls.length > 1 && (
-                <div className="absolute bottom-6 left-0 right-0 flex justify-center gap-1.5 z-20 pointer-events-none">
+                <>
+                  {activeImageIndex > 0 && (
+                    <button
+                      type="button"
+                      onClick={handlePrevImage}
+                      className="absolute left-4 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center backdrop-blur-md opacity-0 group-hover/slider:opacity-100 transition-opacity z-20 shadow-xl border border-white/10"
+                      title="Previous photo"
+                    >
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+                  )}
+                  {activeImageIndex < post.imageUrls.length - 1 && (
+                    <button
+                      type="button"
+                      onClick={handleNextImage}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center backdrop-blur-md opacity-0 group-hover/slider:opacity-100 transition-opacity z-20 shadow-xl border border-white/10"
+                      title="Next photo"
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                    </button>
+                  )}
+                </>
+              )}
+
+              {/* Anchored Pagination Dots */}
+              {post.imageUrls.length > 1 && (
+                <div 
+                  className="absolute bottom-6 left-0 right-0 flex justify-center items-center gap-2 z-20 pointer-events-auto"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   {post.imageUrls.map((_, idx) => (
-                    <div key={idx} className="w-2 h-2 rounded-full bg-white/60 backdrop-blur-md" />
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={(e) => handleSelectImageDot(idx, e)}
+                      className={`transition-all duration-200 rounded-full ${
+                        idx === activeImageIndex 
+                          ? 'w-6 h-2 bg-white shadow-[0_0_10px_rgba(255,255,255,0.8)]' 
+                          : 'w-2 h-2 bg-white/40 hover:bg-white/75'
+                      }`}
+                      aria-label={`Go to slide ${idx + 1}`}
+                    />
                   ))}
+                </div>
+              )}
+
+              {/* Slide Counter Badge */}
+              {post.imageUrls.length > 1 && (
+                <div className="absolute top-4 left-4 bg-black/75 backdrop-blur-md text-white text-xs font-mono font-bold px-2.5 py-1 rounded-full border border-white/10 z-20 pointer-events-none shadow-md">
+                  {activeImageIndex + 1}/{post.imageUrls.length}
                 </div>
               )}
             </div>

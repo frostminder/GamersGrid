@@ -3,9 +3,9 @@ import {
   Plus, Image, Video, Film, Trash2, ArrowLeft, Send, Sparkles, 
   Check, AlertCircle, Play, Sliders, Hash, Loader2, Gamepad2
 } from 'lucide-react';
-import { auth, db, storage } from '../lib/firebase';
+import { auth, db } from '../lib/firebase';
 import { collection, addDoc, doc, getDoc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytes, uploadString, getDownloadURL } from 'firebase/storage';
+import { saveVideoToCache } from '../lib/videoStorage';
 import { AVAILABLE_GAMES, getGameMeta } from '../data/gamesAndPlatforms';
 
 interface CreatePostScreenProps {
@@ -146,53 +146,81 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
       
       try {
         if (postType === 'clip' && videoFile) {
-          setProcessingProgress(35);
+          setProcessingProgress(25);
           setProcessingStatus('Extracting video thumbnail...');
 
-          // Generate a real poster thumbnail from the video using canvas
+          // Generate a real poster thumbnail from the video using canvas (compact JPEG <= 640px)
           let capturedThumbnail = 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&auto=format&fit=crop&q=80';
           try {
             if (videoPreviewRef.current && videoPreviewRef.current.videoWidth > 0) {
               const canvas = document.createElement('canvas');
-              canvas.width = Math.min(videoPreviewRef.current.videoWidth, 800);
-              canvas.height = Math.round((canvas.width * videoPreviewRef.current.videoHeight) / videoPreviewRef.current.videoWidth);
+              const maxDim = 640;
+              let w = videoPreviewRef.current.videoWidth;
+              let h = videoPreviewRef.current.videoHeight;
+              if (w > maxDim) {
+                h = Math.round((h * maxDim) / w);
+                w = maxDim;
+              }
+              canvas.width = w;
+              canvas.height = h;
               const ctx = canvas.getContext('2d');
               if (ctx) {
-                ctx.drawImage(videoPreviewRef.current, 0, 0, canvas.width, canvas.height);
-                capturedThumbnail = canvas.toDataURL('image/jpeg', 0.8);
+                ctx.drawImage(videoPreviewRef.current, 0, 0, w, h);
+                capturedThumbnail = canvas.toDataURL('image/jpeg', 0.75);
               }
             }
           } catch (thumbErr) {
             console.warn('Could not extract video canvas thumbnail:', thumbErr);
           }
 
-          setProcessingProgress(55);
-          setProcessingStatus('Uploading clip to storage...');
+          setProcessingProgress(50);
+          setProcessingStatus('Optimizing video clip...');
 
-          let persistentMediaUrl = '';
+          // Unique media clip identifier
+          const clipId = `clip_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+          // 1. Persistently cache video blob in IndexedDB for instant, zero-hang local playback
+          let indexedDbUri = '';
           try {
-            const user = auth.currentUser;
+            indexedDbUri = await saveVideoToCache(clipId, videoFile);
+          } catch (idbErr) {
+            console.warn('IndexedDB video cache skipped:', idbErr);
+          }
+
+          setProcessingProgress(75);
+          setProcessingStatus('Finalizing video stream...');
+
+          let finalMediaUrl = indexedDbUri || videoPreview || '';
+
+          // 2. Upload video stream to server endpoint with a fast 10-second timeout
+          try {
             const fileExt = videoFile.name.split('.').pop() || 'mp4';
-            const storagePath = `clips/${user?.uid || 'anonymous'}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-            const storageRefObj = ref(storage, storagePath);
-            const uploadSnapshot = await uploadBytes(storageRefObj, videoFile);
-            persistentMediaUrl = await getDownloadURL(uploadSnapshot.ref);
-          } catch (storageErr) {
-            console.warn('Firebase Storage upload failed, utilizing persistent data URL fallback:', storageErr);
-            if (videoFile.size < 8 * 1024 * 1024) {
-              persistentMediaUrl = await new Promise<string>((res, rej) => {
-                const reader = new FileReader();
-                reader.onloadend = () => res(reader.result as string);
-                reader.onerror = rej;
-                reader.readAsDataURL(videoFile);
-              });
-            } else {
-              persistentMediaUrl = videoPreview || URL.createObjectURL(videoFile);
+            const controller = new AbortController();
+            const timeoutTimer = setTimeout(() => controller.abort(), 10000);
+
+            const uploadRes = await fetch('/api/upload-video', {
+              method: 'POST',
+              headers: {
+                'x-file-ext': fileExt,
+                'Content-Type': videoFile.type || 'video/mp4'
+              },
+              body: videoFile,
+              signal: controller.signal
+            });
+            clearTimeout(timeoutTimer);
+
+            if (uploadRes.ok) {
+              const uploadData = await uploadRes.json();
+              if (uploadData && uploadData.url) {
+                finalMediaUrl = uploadData.url;
+              }
             }
+          } catch (uploadErr) {
+            console.warn('Server video stream upload skipped or timed out; utilizing persistent local cache:', uploadErr);
           }
 
           setProcessingProgress(100);
-          setProcessingStatus('Video processed successfully!');
+          setProcessingStatus('Video ready!');
 
           setTimeout(() => {
             setIsProcessingMedia(false);
@@ -200,11 +228,11 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
             const seconds = Math.floor(trimmedDuration % 60).toString().padStart(2, '0');
             
             resolve({
-              mediaUrl: persistentMediaUrl,
+              mediaUrl: finalMediaUrl,
               thumbnailUrl: capturedThumbnail,
               duration: `${minutes}:${seconds}`
             });
-          }, 600);
+          }, 350);
           
         } else if (postType === 'image' && imageFiles.length > 0) {
           setProcessingStatus('Compressing images...');

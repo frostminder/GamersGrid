@@ -1,11 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Heart, MessageSquare, Share2, Bookmark, Play, Pause,
-  ShieldCheck, Send, CornerDownRight, AlertCircle, Sparkles
+  ShieldCheck, Send, CornerDownRight, AlertCircle, Sparkles,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { Post, Comment } from '../types/mockData';
 import { auth, db } from '../lib/firebase';
 import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, increment } from 'firebase/firestore';
+import { resolvePlayableVideoUrl } from '../lib/videoStorage';
 
 interface FeedCardProps {
   post: Post;
@@ -37,11 +39,16 @@ export const FeedCard: React.FC<FeedCardProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
   
   // Dynamic Video Player State
+  const [playableVideoSrc, setPlayableVideoSrc] = useState<string>(post.videoUrl || '');
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [videoProgress, setVideoProgress] = useState(0);
   const [videoError, setVideoError] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
+
+  // Multi-image Carousel State
+  const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
+  const imageSliderRef = useRef<HTMLDivElement>(null);
 
   // Inline Commenting State
   const [showComments, setShowComments] = useState(false);
@@ -51,6 +58,68 @@ export const FeedCard: React.FC<FeedCardProps> = ({
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const commentInputRef = useRef<HTMLInputElement>(null);
+
+  // Resolve playable video URL (e.g. if cached locally in IndexedDB or direct stream)
+  useEffect(() => {
+    let isMounted = true;
+    if (post.videoUrl) {
+      resolvePlayableVideoUrl(post.videoUrl).then((resolved) => {
+        if (isMounted && resolved) {
+          setPlayableVideoSrc(resolved);
+        }
+      });
+    } else {
+      setPlayableVideoSrc('');
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [post.videoUrl]);
+
+  const handleImageScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const container = e.currentTarget;
+    if (container.clientWidth > 0) {
+      const idx = Math.round(container.scrollLeft / container.clientWidth);
+      if (idx !== activeImageIndex && idx >= 0 && (!post.imageUrls || idx < post.imageUrls.length)) {
+        setActiveImageIndex(idx);
+      }
+    }
+  };
+
+  const handlePrevImage = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (imageSliderRef.current && activeImageIndex > 0) {
+      const nextIdx = activeImageIndex - 1;
+      imageSliderRef.current.scrollTo({
+        left: nextIdx * imageSliderRef.current.clientWidth,
+        behavior: 'smooth'
+      });
+      setActiveImageIndex(nextIdx);
+    }
+  };
+
+  const handleNextImage = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (imageSliderRef.current && post.imageUrls && activeImageIndex < post.imageUrls.length - 1) {
+      const nextIdx = activeImageIndex + 1;
+      imageSliderRef.current.scrollTo({
+        left: nextIdx * imageSliderRef.current.clientWidth,
+        behavior: 'smooth'
+      });
+      setActiveImageIndex(nextIdx);
+    }
+  };
+
+  const handleSelectImageDot = (idx: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (imageSliderRef.current) {
+      imageSliderRef.current.scrollTo({
+        left: idx * imageSliderRef.current.clientWidth,
+        behavior: 'smooth'
+      });
+      setActiveImageIndex(idx);
+    }
+  };
 
   // Determine if this post was authored by the current logged-in user
   const isOwnPost = Boolean(
@@ -75,7 +144,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
     const commentsRef = collection(db, 'posts', post.id, 'comments');
     const q = query(commentsRef, orderBy('createdAtTimestamp', 'desc'));
 
-    const unsubscribe = onSnapshot(commentsRef, (snapshot) => {
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       if (!snapshot.empty) {
         const loaded: Comment[] = [];
         snapshot.forEach((docSnap) => {
@@ -99,7 +168,9 @@ export const FeedCard: React.FC<FeedCardProps> = ({
       }
     }, (err) => {
       // If rules deny or collection not found, rely on prop comments
-      console.warn('Comments subcollection listener:', err);
+      if (err.code !== 'permission-denied') {
+        console.warn('Comments subcollection listener:', err);
+      }
     });
 
     return () => unsubscribe();
@@ -334,7 +405,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
           <div className="w-full h-full relative flex items-center justify-center bg-black">
             <video
               ref={videoRef}
-              src={post.videoUrl}
+              src={playableVideoSrc || post.videoUrl}
               poster={post.thumbnailUrl}
               playsInline
               muted
@@ -424,21 +495,75 @@ export const FeedCard: React.FC<FeedCardProps> = ({
             </div>
           </div>
         ) : post.imageUrls && post.imageUrls.length > 0 ? (
-          /* Multi-image carousel */
-          <div className="w-full h-full flex overflow-x-auto snap-x snap-mandatory scrollbar-hide relative group/slider">
-            {post.imageUrls.map((imgUrl, idx) => (
-              <img
-                key={idx}
-                src={imgUrl}
-                alt={post.title || post.caption}
-                className="w-full h-full object-cover flex-shrink-0 snap-center"
-              />
-            ))}
+          /* Multi-image carousel with anchored dots, active indicator, and smooth navigation */
+          <div className="w-full h-full relative group/slider">
+            <div 
+              ref={imageSliderRef}
+              onScroll={handleImageScroll}
+              className="w-full h-full flex overflow-x-auto snap-x snap-mandatory scrollbar-hide"
+            >
+              {post.imageUrls.map((imgUrl, idx) => (
+                <img
+                  key={idx}
+                  src={imgUrl}
+                  alt={post.title || post.caption || `Photo ${idx + 1}`}
+                  className="w-full h-full object-cover flex-shrink-0 snap-center"
+                />
+              ))}
+            </div>
+
+            {/* Left and Right navigation buttons */}
             {post.imageUrls.length > 1 && (
-              <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 z-20 pointer-events-none">
+              <>
+                {activeImageIndex > 0 && (
+                  <button
+                    type="button"
+                    onClick={handlePrevImage}
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/65 hover:bg-black/90 text-white flex items-center justify-center backdrop-blur-md opacity-0 group-hover/slider:opacity-100 transition-opacity z-20 shadow-md"
+                    title="Previous image"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                )}
+                {activeImageIndex < post.imageUrls.length - 1 && (
+                  <button
+                    type="button"
+                    onClick={handleNextImage}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/65 hover:bg-black/90 text-white flex items-center justify-center backdrop-blur-md opacity-0 group-hover/slider:opacity-100 transition-opacity z-20 shadow-md"
+                    title="Next image"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                )}
+              </>
+            )}
+
+            {/* Fixed Pagination Dots - Anchored to media frame so they NEVER vanish when swiping */}
+            {post.imageUrls.length > 1 && (
+              <div 
+                className="absolute bottom-3 left-0 right-0 flex justify-center items-center gap-1.5 z-20 pointer-events-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
                 {post.imageUrls.map((_, idx) => (
-                  <div key={idx} className="w-1.5 h-1.5 rounded-full bg-white/60 backdrop-blur-md" />
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={(e) => handleSelectImageDot(idx, e)}
+                    className={`transition-all duration-200 rounded-full ${
+                      idx === activeImageIndex 
+                        ? 'w-5 h-1.5 bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]' 
+                        : 'w-1.5 h-1.5 bg-white/40 hover:bg-white/70'
+                    }`}
+                    aria-label={`Go to image ${idx + 1}`}
+                  />
                 ))}
+              </div>
+            )}
+
+            {/* Image index counter badge */}
+            {post.imageUrls.length > 1 && (
+              <div className="absolute top-3 right-3 bg-black/75 backdrop-blur-md text-white text-[10px] font-bold font-mono px-2 py-0.5 rounded-full border border-white/10 z-20 pointer-events-none">
+                {activeImageIndex + 1}/{post.imageUrls.length}
               </div>
             )}
           </div>

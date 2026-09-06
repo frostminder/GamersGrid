@@ -106,8 +106,14 @@ service cloud.firestore {
     }
 
     match /posts/{postId} {
-      allow read, list: if isSignedIn();
+      allow read, list: if true;
       allow create, update, delete: if isSignedIn();
+
+      match /comments/{commentId} {
+        allow read, list: if true;
+        allow create, update: if isSignedIn();
+        allow delete: if isSignedIn();
+      }
     }
   }
 }
