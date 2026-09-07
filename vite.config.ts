@@ -273,8 +273,17 @@ function videoUploadPlugin(): Plugin {
         }
       });
 
-      // 6. Direct server-side R2 upload fallback (handles any client CORS restrictions)
+      // 6. Direct server-side R2 streaming upload endpoint
       server.middlewares.use('/api/upload-to-r2-direct', async (req, res) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', '*');
+
+        if (req.method === 'OPTIONS') {
+          res.statusCode = 204;
+          return res.end();
+        }
+
         if (req.method === 'POST') {
           try {
             const { accountId, accessKeyId, secretAccessKey, bucketName, publicDomain } = getR2Config();
@@ -285,46 +294,47 @@ function videoUploadPlugin(): Plugin {
             }
 
             const fileName = (req.headers['x-file-name'] as string) || 'media';
-            const fileType = (req.headers['x-file-type'] as string) || 'application/octet-stream';
-            const cleanName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+            const rawFileType = (req.headers['x-file-type'] as string) || 'application/octet-stream';
+            const fileType = decodeURIComponent(rawFileType);
+            const cleanName = decodeURIComponent(fileName).replace(/[^a-zA-Z0-9._-]/g, '_');
             const key = `media/${Date.now()}_${Math.random().toString(36).substring(2, 9)}_${cleanName}`;
 
-            const chunks: Buffer[] = [];
-            req.on('data', chunk => chunks.push(chunk));
-            req.on('end', async () => {
-              try {
-                const buffer = Buffer.concat(chunks);
-                const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
-                const s3 = new S3Client({
-                  region: 'auto',
-                  endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
-                  credentials: { accessKeyId, secretAccessKey },
-                });
+            const { S3Client } = await import('@aws-sdk/client-s3');
+            const { Upload } = await import('@aws-sdk/lib-storage');
 
-                await s3.send(new PutObjectCommand({
-                  Bucket: bucketName,
-                  Key: key,
-                  Body: buffer,
-                  ContentType: fileType,
-                  CacheControl: 'public, max-age=31536000, immutable',
-                }));
-
-                const cleanPublicDomain = (publicDomain || `https://${bucketName}.${accountId}.r2.cloudflarestorage.com`).replace(/\/+$/, '');
-                const publicUrl = `${cleanPublicDomain}/${key}`;
-
-                res.setHeader('Content-Type', 'application/json');
-                res.statusCode = 200;
-                res.end(JSON.stringify({ success: true, url: publicUrl, key }));
-              } catch (uploadErr: any) {
-                res.setHeader('Content-Type', 'application/json');
-                res.statusCode = 500;
-                res.end(JSON.stringify({ success: false, error: uploadErr?.message || 'Direct upload failed' }));
-              }
+            const s3 = new S3Client({
+              region: 'auto',
+              endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+              credentials: { accessKeyId, secretAccessKey },
             });
+
+            const upload = new Upload({
+              client: s3,
+              params: {
+                Bucket: bucketName,
+                Key: key,
+                Body: req,
+                ContentType: fileType,
+                CacheControl: 'public, max-age=31536000, immutable',
+              },
+              queueSize: 4,
+              partSize: 1024 * 1024 * 5,
+              leavePartsOnError: false,
+            });
+
+            await upload.done();
+
+            const cleanPublicDomain = (publicDomain || `https://${bucketName}.${accountId}.r2.cloudflarestorage.com`).replace(/\/+$/, '');
+            const publicUrl = `${cleanPublicDomain}/${key}`;
+
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = 200;
+            res.end(JSON.stringify({ success: true, url: publicUrl, key }));
           } catch (e: any) {
+            console.error('Streaming R2 upload failed:', e);
             res.setHeader('Content-Type', 'application/json');
             res.statusCode = 500;
-            res.end(JSON.stringify({ success: false, error: e?.message || 'Error processing upload' }));
+            res.end(JSON.stringify({ success: false, error: e?.message || 'Error processing streaming upload to Cloudflare R2' }));
           }
         } else {
           res.statusCode = 405;

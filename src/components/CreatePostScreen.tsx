@@ -147,75 +147,26 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
       
       try {
         if (postType === 'clip' && videoFile) {
-          setProcessingProgress(25);
-          setProcessingStatus('Extracting video thumbnail...');
+          setProcessingProgress(40);
+          setProcessingStatus('Uploading video directly to Cloudflare R2...');
 
-          // Generate a real poster thumbnail from the video using canvas (compact JPEG <= 640px)
-          let capturedThumbnail = 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&auto=format&fit=crop&q=80';
-          try {
-            if (videoPreviewRef.current && videoPreviewRef.current.videoWidth > 0) {
-              const canvas = document.createElement('canvas');
-              const maxDim = 640;
-              let w = videoPreviewRef.current.videoWidth;
-              let h = videoPreviewRef.current.videoHeight;
-              if (w > maxDim) {
-                h = Math.round((h * maxDim) / w);
-                w = maxDim;
-              }
-              canvas.width = w;
-              canvas.height = h;
-              const ctx = canvas.getContext('2d');
-              if (ctx) {
-                ctx.drawImage(videoPreviewRef.current, 0, 0, w, h);
-                capturedThumbnail = canvas.toDataURL('image/jpeg', 0.75);
-              }
-            }
-          } catch (thumbErr) {
-            console.warn('Could not extract video canvas thumbnail:', thumbErr);
-          }
-
-          setProcessingProgress(50);
-          setProcessingStatus('Optimizing video clip...');
-
-          // Unique media clip identifier
-          const clipId = `clip_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-
-          // 1. Persistently cache video blob in IndexedDB for instant zero-hang local playback
-          let indexedDbUri = '';
-          try {
-            indexedDbUri = await saveVideoToCache(clipId, videoFile);
-          } catch (idbErr) {
-            console.warn('IndexedDB video cache skipped:', idbErr);
-          }
-
-          setProcessingProgress(65);
-          setProcessingStatus('Uploading video clip to cloud storage...');
-
-          // 2. Upload video stream directly to Cloudflare R2
           let finalMediaUrl = '';
-          try {
-            const r2Result = await uploadToR2(videoFile);
-            if (r2Result && r2Result.url) {
-              finalMediaUrl = r2Result.url;
-              if (r2Result.thumbnailUrl) {
-                capturedThumbnail = r2Result.thumbnailUrl;
-              }
-            }
-          } catch (r2Err: any) {
-            console.warn('R2 upload error:', r2Err);
-            try {
-              finalMediaUrl = await uploadVideoToCloud(videoFile);
-            } catch (uploadErr) {
-              console.warn('Cloud video upload error:', uploadErr);
+          let capturedThumbnail = 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&auto=format&fit=crop&q=80';
+
+          const r2Result = await uploadToR2(videoFile);
+          if (r2Result && r2Result.url && r2Result.url.startsWith('http')) {
+            finalMediaUrl = r2Result.url;
+            if (r2Result.thumbnailUrl) {
+              capturedThumbnail = r2Result.thumbnailUrl;
             }
           }
 
-          if (!finalMediaUrl || !finalMediaUrl.startsWith('http')) {
-            throw new Error('Failed to upload video clip to Cloudflare R2. Please check your connection and try again.');
+          if (!finalMediaUrl) {
+            throw new Error('Failed to upload video clip to Cloudflare R2.');
           }
 
           setProcessingProgress(100);
-          setProcessingStatus('Video ready!');
+          setProcessingStatus('Video upload complete!');
 
           setTimeout(() => {
             setIsProcessingMedia(false);
