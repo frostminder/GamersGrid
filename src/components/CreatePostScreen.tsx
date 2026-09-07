@@ -201,8 +201,8 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
                 capturedThumbnail = r2Result.thumbnailUrl;
               }
             }
-          } catch (r2Err) {
-            console.warn('R2 direct upload error, trying fallback:', r2Err);
+          } catch (r2Err: any) {
+            console.warn('R2 upload error:', r2Err);
             try {
               finalMediaUrl = await uploadVideoToCloud(videoFile);
             } catch (uploadErr) {
@@ -210,9 +210,8 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
             }
           }
 
-          // Use the uploaded cloud URL or the local IndexedDB URI for the user's actual video
-          if (!finalMediaUrl) {
-            finalMediaUrl = indexedDbUri || videoPreview || '';
+          if (!finalMediaUrl || !finalMediaUrl.startsWith('http')) {
+            throw new Error('Failed to upload video clip to Cloudflare R2. Please check your connection and try again.');
           }
 
           setProcessingProgress(100);
@@ -237,16 +236,11 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
           
           for (let i = 0; i < imageFiles.length; i++) {
             setProcessingProgress(15 + Math.floor(((i + 1) / imageFiles.length) * 80));
-            try {
-              const r2Res = await uploadToR2(imageFiles[i]);
-              if (r2Res && r2Res.url) {
-                uploadedImageUrls.push(r2Res.url);
-              } else {
-                uploadedImageUrls.push(imagePreviews[i]);
-              }
-            } catch (err) {
-              console.warn('R2 image upload error, using preview:', err);
-              uploadedImageUrls.push(imagePreviews[i]);
+            const r2Res = await uploadToR2(imageFiles[i]);
+            if (r2Res && r2Res.url && r2Res.url.startsWith('http')) {
+              uploadedImageUrls.push(r2Res.url);
+            } else {
+              throw new Error(`Failed to upload image ${i + 1} to Cloudflare R2.`);
             }
           }
 
