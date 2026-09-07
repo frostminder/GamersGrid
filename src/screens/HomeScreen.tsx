@@ -528,8 +528,8 @@ export const HomeScreen: React.FC = () => {
               className="h-9 w-9 rounded-full bg-gradient-to-tr bg-[#5003BD] p-[2px] cursor-pointer hover:scale-105 transition-transform"
             >
               <div className="w-full h-full rounded-full bg-[#1a1a1a] flex items-center justify-center overflow-hidden">
-                {(userProfile?.photoURL || user?.photoURL) ? (
-                  <img src={userProfile?.photoURL || user?.photoURL} alt="Profile" className="w-full h-full object-cover" />
+                {(userProfile?.photoURL?.trim() || user?.photoURL?.trim()) ? (
+                  <img src={userProfile?.photoURL?.trim() || user?.photoURL?.trim()} alt="Profile" className="w-full h-full object-cover" />
                 ) : (
                   <span className="font-bold text-sm text-white uppercase">{userProfile?.gamertag?.[0] || user?.email?.[0] || 'G'}</span>
                 )}

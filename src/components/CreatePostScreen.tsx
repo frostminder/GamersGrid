@@ -189,21 +189,58 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
 
   // Trim video segment before uploading
   const prepareVideoForUpload = async (file: File, start: number, end: number, totalDuration: number): Promise<File> => {
-    // If video is under 120s and start is 0 and end covers video, send raw file
-    if (start <= 0.1 && (end <= 0 || Math.abs(end - totalDuration) <= 1.0)) {
+    // If video is under 120s and start is near beginning and end is near full length
+    const durationSpan = Math.max(0, end - start);
+    const isWholeVideoSelected = start <= 1.0 && (end <= 0 || end >= totalDuration - 2.0 || end >= 120.0);
+    
+    if (totalDuration <= 122.0 && isWholeVideoSelected) {
+      return file;
+    }
+
+    if (durationSpan <= 0) {
       return file;
     }
 
     return new Promise((resolve) => {
+      let resolved = false;
+
+      const safeResolve = (resultFile: File) => {
+        if (!resolved) {
+          resolved = true;
+          resolve(resultFile);
+        }
+      };
+
+      // Fail-safe timeout: never hang longer than 3.5 seconds
+      const safetyTimeout = setTimeout(() => {
+        console.warn('Trim operation timed out, using original file');
+        safeResolve(file);
+      }, 3500);
+
       try {
         const video = document.createElement('video');
-        video.src = URL.createObjectURL(file);
+        const objectUrl = URL.createObjectURL(file);
+        video.src = objectUrl;
         video.currentTime = start;
         video.muted = true;
+        video.playsInline = true;
+
+        const cleanup = () => {
+          clearTimeout(safetyTimeout);
+          try { video.pause(); } catch {}
+          try { URL.revokeObjectURL(objectUrl); } catch {}
+        };
 
         video.onseeked = async () => {
           try {
-            const stream = (video as any).captureStream ? (video as any).captureStream() : (video as any).mozCaptureStream();
+            const stream = (video as any).captureStream ? (video as any).captureStream() : (video as any).mozCaptureStream ? (video as any).mozCaptureStream() : null;
+            
+            if (!stream || typeof MediaRecorder === 'undefined') {
+              cleanup();
+              safeResolve(file);
+              return;
+            }
+
             const mimeType = MediaRecorder.isTypeSupported('video/mp4;codecs=avc1')
               ? 'video/mp4;codecs=avc1'
               : MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
@@ -218,35 +255,55 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
             };
 
             recorder.onstop = () => {
-              URL.revokeObjectURL(video.src);
+              cleanup();
               const blob = new Blob(chunks, { type: mimeType });
-              const trimmedFile = new File([blob], `trimmed_${file.name}`, { type: mimeType });
-              resolve(trimmedFile);
+              if (blob.size > 0) {
+                const trimmedFile = new File([blob], `trimmed_${file.name}`, { type: mimeType });
+                safeResolve(trimmedFile);
+              } else {
+                safeResolve(file);
+              }
             };
 
             recorder.start(100);
-            await video.play();
+            await video.play().catch(() => {});
 
             const checkInterval = setInterval(() => {
-              if (video.currentTime >= end || video.ended) {
+              if (video.currentTime >= end || video.ended || resolved) {
                 clearInterval(checkInterval);
-                video.pause();
-                recorder.stop();
+                try {
+                  if (recorder.state !== 'inactive') {
+                    recorder.stop();
+                  }
+                } catch {
+                  cleanup();
+                  safeResolve(file);
+                }
               }
             }, 50);
           } catch (e) {
             console.warn('Trim capture fallback:', e);
-            URL.revokeObjectURL(video.src);
-            resolve(file);
+            cleanup();
+            safeResolve(file);
           }
         };
 
         video.onerror = () => {
-          resolve(file);
+          cleanup();
+          safeResolve(file);
         };
+
+        // In case onseeked doesn't fire immediately, attempt fallback trigger
+        setTimeout(() => {
+          if (!resolved && video.readyState >= 1) {
+            try { video.dispatchEvent(new Event('seeked')); } catch {}
+          }
+        }, 600);
+
       } catch (err) {
         console.warn('Trim recording error:', err);
-        resolve(file);
+        clearTimeout(safetyTimeout);
+        safeResolve(file);
       }
     });
   };
@@ -540,7 +597,7 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
                   {videoPreview && (
                     <video
                       ref={videoRef}
-                      src={videoPreview}
+                      src={videoPreview || undefined}
                       className="w-full h-full object-contain"
                       playsInline
                       muted
@@ -705,7 +762,7 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {imagePreviews.map((src, i) => (
                   <div key={i} className="relative aspect-square rounded-2xl overflow-hidden bg-black border border-[#2a2a2a] group">
-                    <img src={src} alt="Upload preview" className="w-full h-full object-cover" />
+                    <img src={src || undefined} alt="Upload preview" className="w-full h-full object-cover" />
                     <button
                       type="button"
                       onClick={() => removeImage(i)}

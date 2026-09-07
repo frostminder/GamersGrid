@@ -258,8 +258,8 @@ export const ClipPlayerModal: React.FC<ClipPlayerModalProps> = ({
           {post.videoUrl ? (
             <video
               ref={videoRef}
-              src={playableVideoSrc || post.videoUrl}
-              poster={post.thumbnailUrl}
+              src={playableVideoSrc || post.videoUrl || undefined}
+              poster={post.thumbnailUrl || undefined}
               autoPlay
               loop
               playsInline
@@ -344,7 +344,7 @@ export const ClipPlayerModal: React.FC<ClipPlayerModalProps> = ({
             </div>
           ) : (
             <img
-              src={post.thumbnailUrl}
+              src={post.thumbnailUrl || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&auto=format&fit=crop&q=80'}
               alt={post.title || post.caption}
               className="w-full h-full object-contain max-h-full"
             />
@@ -461,7 +461,7 @@ export const ClipPlayerModal: React.FC<ClipPlayerModalProps> = ({
           <div className="p-4 border-b border-[#2A2A2E] flex items-center justify-between">
             <div className="flex items-center gap-3">
               <img
-                src={post.creator.avatar}
+                src={post.creator.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'}
                 alt={post.creator.username}
                 className="w-10 h-10 rounded-full object-cover border border-[#5003BD]"
               />
@@ -578,7 +578,7 @@ export const ClipPlayerModal: React.FC<ClipPlayerModalProps> = ({
                 return (
                   <div key={c.id} className="flex items-start gap-2.5 text-xs">
                     <img
-                      src={c.user.avatar}
+                      src={c.user.avatar || 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?w=150&auto=format&fit=crop&q=80'}
                       alt={c.user.username}
                       className="w-7 h-7 rounded-full object-cover border border-[#2A2A2E] mt-0.5"
                     />

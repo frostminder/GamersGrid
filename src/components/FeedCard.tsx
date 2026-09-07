@@ -373,7 +373,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
           <div className="relative">
             <div className={`p-0.5 rounded-full ${post.creator.isPremium ? 'bg-gradient-to-tr from-[#5003BD] via-purple-400 to-cyan-400' : 'bg-[#2A2A2E]'}`}>
               <img
-                src={post.creator.avatar}
+                src={post.creator.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'}
                 alt={post.creator.username}
                 className="w-10 h-10 rounded-full object-cover bg-[#121212]"
               />
@@ -444,8 +444,8 @@ export const FeedCard: React.FC<FeedCardProps> = ({
           <div className="w-full h-full relative flex items-center justify-center bg-black">
             <video
               ref={videoRef}
-              src={playableVideoSrc || post.videoUrl}
-              poster={post.thumbnailUrl}
+              src={playableVideoSrc || post.videoUrl || undefined}
+              poster={post.thumbnailUrl || undefined}
               playsInline
               muted
               loop
@@ -609,7 +609,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
         ) : (
           /* Thumbnail / Single Image */
           <img
-            src={post.thumbnailUrl}
+            src={post.thumbnailUrl || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&auto=format&fit=crop&q=80'}
             alt={post.title || post.caption}
             className="w-full h-full object-cover"
           />
@@ -771,7 +771,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
                 return (
                   <div key={c.id} className="flex items-start gap-2.5 bg-[#1f1f23]/60 p-2 rounded-xl border border-[#2A2A2E]/40 text-xs">
                     <img
-                      src={c.user.avatar}
+                      src={c.user.avatar || 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?w=150&auto=format&fit=crop&q=80'}
                       alt={c.user.username}
                       className="w-7 h-7 rounded-full object-cover bg-black flex-shrink-0 mt-0.5"
                     />

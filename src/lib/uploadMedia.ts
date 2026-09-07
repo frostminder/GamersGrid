@@ -1,5 +1,7 @@
-// 7. Cloudflare R2 for images/videos
-// Uploads media directly to Cloudflare R2 bucket (gamersgrid-media)
+import { saveVideoToCache } from './videoStorage';
+
+// 7. Media Upload Engine for images/videos
+// Uploads media directly to Cloudflare R2 bucket with automatic persistent local storage fallback
 
 /**
  * Validates video constraints: soft duration check to ensure smooth uploads.
@@ -150,5 +152,38 @@ export const uploadToR2 = async (file: File): Promise<{ url: string, thumbnailUr
     console.warn('Presigned PUT upload to R2 error:', err?.message);
   }
 
-  throw new Error('Could not upload file to Cloudflare R2. Please check your network connection.');
+  // Fallback Path: If cloud endpoints are unavailable or unconfigured, save persistently to IndexedDB or Data URL
+  try {
+    if (file.type.startsWith('video/')) {
+      const clipId = `clip_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const cachedUri = await saveVideoToCache(clipId, file);
+      if (cachedUri) {
+        return {
+          url: cachedUri,
+          thumbnailUrl
+        };
+      }
+    } else if (file.type.startsWith('image/')) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          resolve({
+            url: reader.result as string,
+            thumbnailUrl: reader.result as string
+          });
+        };
+        reader.onerror = () => {
+          resolve({
+            url: URL.createObjectURL(file),
+            thumbnailUrl: URL.createObjectURL(file)
+          });
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+  } catch (fallbackErr) {
+    console.warn('Media upload fallback error:', fallbackErr);
+  }
+
+  throw new Error('Could not upload media file. Please check your network connection or try a smaller video clip.');
 };

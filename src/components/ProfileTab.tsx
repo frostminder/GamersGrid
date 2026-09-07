@@ -133,8 +133,8 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onNavigate }) => {
       
       {/* Banner Section */}
       <div className="relative w-full h-48 sm:h-64 bg-[#121212] flex-shrink-0 z-0">
-        {profile.bannerURL ? (
-          <img src={profile.bannerURL} alt="Banner" className="w-full h-full object-cover" />
+        {profile.bannerURL?.trim() ? (
+          <img src={profile.bannerURL.trim()} alt="Banner" className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full bg-gradient-to-r from-[#2a2a2e] to-[#1a1a1a] flex items-center justify-center">
             <ImageIcon className="w-12 h-12 text-[#555555] opacity-50" />
@@ -174,8 +174,8 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onNavigate }) => {
         {/* Avatar */}
         <div className="relative group">
           <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-[#1c1c1f] border-[6px] border-[#1c1c1f] shadow-2xl flex items-center justify-center overflow-hidden shrink-0">
-            {profile.photoURL ? (
-              <img src={profile.photoURL} alt="Profile" className="w-full h-full object-cover" />
+            {profile.photoURL?.trim() ? (
+              <img src={profile.photoURL.trim()} alt="Profile" className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full bg-[#2a2a2e] flex items-center justify-center">
                 <span className="font-bold text-5xl text-white">{profile.gamertag?.[0]?.toUpperCase() || 'G'}</span>
