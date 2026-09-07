@@ -34,6 +34,7 @@ import {
 } from '../lib/presenceService';
 import { searchUsers, UserProfile } from '../lib/userService';
 import { PublicProfileModal } from './PublicProfileModal';
+import { uploadToR2 } from '../lib/uploadMedia';
 
 interface ChatMessage {
   id: string;
@@ -615,6 +616,7 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
   const [pendingImage, setPendingImage] = useState<{
     dataUrl: string;
     caption: string;
+    file?: File;
   } | null>(null);
   const [isSendingImage, setIsSendingImage] = useState(false);
 
@@ -1422,6 +1424,7 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
         setPendingImage({
           dataUrl,
           caption: messageInput.trim(),
+          file,
         });
         setMessageInput('');
         setShowEmojiPicker(false);
@@ -1433,10 +1436,26 @@ export const MessagesScreen: React.FC<MessagesScreenProps> = ({ onChatActiveChan
     if (!pendingImage || isSendingImage || isSending || !currentUser) return;
     setIsSendingImage(true);
     try {
-      const compressed = await compressImage(pendingImage.dataUrl);
+      let finalImageUrl = pendingImage.dataUrl;
+
+      // Upload to Cloudflare R2 if original file is present
+      if (pendingImage.file) {
+        try {
+          const r2Res = await uploadToR2(pendingImage.file);
+          if (r2Res?.url) {
+            finalImageUrl = r2Res.url;
+          }
+        } catch (r2Err) {
+          console.warn('R2 direct upload failed, compressing locally:', r2Err);
+          finalImageUrl = await compressImage(pendingImage.dataUrl);
+        }
+      } else {
+        finalImageUrl = await compressImage(pendingImage.dataUrl);
+      }
+
       const caption = pendingImage.caption.trim();
       await handleSendMessage(undefined, {
-        imageUrl: compressed,
+        imageUrl: finalImageUrl,
         text: caption,
       });
       setPendingImage(null);

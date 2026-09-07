@@ -6,10 +6,9 @@ import {
 import { auth, db } from '../lib/firebase';
 import { 
   ArrowLeft, Send, Image as ImageIcon, Loader2, Play, 
-  Paperclip, Check, CheckCheck, Video as VideoIcon, AlertCircle, Cloud
+  Paperclip, Check, CheckCheck, Video as VideoIcon, AlertCircle
 } from 'lucide-react';
 import { uploadToR2 } from '../lib/uploadMedia';
-import { R2ConfigModal } from './R2ConfigModal';
 
 interface Message {
   id: string;
@@ -45,7 +44,6 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
   const [hasMore, setHasMore] = useState(true);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [playingVideoId, setPlayingVideoId] = useState<string | null>(null);
-  const [showR2Modal, setShowR2Modal] = useState(false);
 
   const lastDocRef = useRef<any>(null);
   const currentUser = auth.currentUser;
@@ -305,43 +303,18 @@ export const ChatScreen: React.FC<ChatScreenProps> = ({
             </div>
           </div>
         </div>
-
-        {/* Cloudflare R2 Setup Button */}
-        <button
-          onClick={() => setShowR2Modal(true)}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#1e1e24] hover:bg-[#282830] text-zinc-300 hover:text-white text-xs font-semibold border border-[#32323a] transition-all"
-          title="Configure Cloudflare R2 Storage"
-          id="btn-open-r2-modal"
-        >
-          <Cloud className="w-3.5 h-3.5 text-purple-400" />
-          <span className="hidden sm:inline">R2 Setup</span>
-        </button>
       </div>
 
-      {/* Upload Error Banner if R2 credentials need setup */}
+      {/* Upload Error Banner */}
       {uploadError && (
         <div className="p-2.5 bg-amber-500/10 border-b border-amber-500/30 flex items-center justify-between text-amber-300 text-xs px-4">
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
             <span>{uploadError}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={() => setShowR2Modal(true)}
-              className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-[11px] font-bold border border-amber-500/40"
-            >
-              Enter Keys
-            </button>
-            <button onClick={() => setUploadError(null)} className="text-zinc-400 hover:text-white font-bold ml-1">×</button>
-          </div>
+          <button onClick={() => setUploadError(null)} className="text-zinc-400 hover:text-white font-bold ml-1">×</button>
         </div>
       )}
-
-      <R2ConfigModal 
-        isOpen={showR2Modal} 
-        onClose={() => setShowR2Modal(false)}
-        onSuccess={() => setUploadError(null)}
-      />
 
       {/* ----------------------------------------------------------------------
           Rule 1: Fix chat opening behavior (critical)

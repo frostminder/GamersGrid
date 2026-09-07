@@ -4,8 +4,7 @@ import {
   setDoc, doc, serverTimestamp 
 } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
-import { MessageSquare, Search, Plus, X, User as UserIcon, Loader2, Cloud } from 'lucide-react';
-import { R2ConfigModal } from './R2ConfigModal';
+import { MessageSquare, Search, Plus, X, User as UserIcon, Loader2 } from 'lucide-react';
 
 interface Conversation {
   id: string;
@@ -29,7 +28,6 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ onSelectConversa
   const [searchQuery, setSearchQuery] = useState('');
   const [availableUsers, setAvailableUsers] = useState<any[]>([]);
   const [searchingUsers, setSearchingUsers] = useState(false);
-  const [showR2Modal, setShowR2Modal] = useState(false);
   const currentUser = auth.currentUser;
 
   // Rule 3: Listener scoping
@@ -155,15 +153,6 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ onSelectConversa
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setShowR2Modal(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#1e1e24] hover:bg-[#282830] text-zinc-300 hover:text-white text-xs font-semibold border border-[#32323a] transition-all shadow-sm active:scale-95"
-            title="Configure Cloudflare R2 Media Storage"
-            id="btn-r2-setup-list"
-          >
-            <Cloud className="w-3.5 h-3.5 text-purple-400" />
-            <span className="hidden sm:inline">R2 Setup</span>
-          </button>
-          <button
             onClick={() => setShowNewChatModal(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#5003BD] hover:bg-[#7A22EC] text-white text-xs font-semibold transition-all shadow-md active:scale-95"
             id="btn-new-chat"
@@ -173,11 +162,6 @@ export const ChatListScreen: React.FC<ChatListScreenProps> = ({ onSelectConversa
           </button>
         </div>
       </div>
-
-      <R2ConfigModal 
-        isOpen={showR2Modal} 
-        onClose={() => setShowR2Modal(false)}
-      />
 
       {/* Search Bar */}
       <div className="p-3 border-b border-[#2A2A2E]/60 bg-[#141414]">
