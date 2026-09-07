@@ -19,6 +19,40 @@ import { startPresenceTracking } from '../lib/presenceService';
 import { followUser, unfollowUser } from '../lib/userService';
 import { MOCK_TOURNAMENTS, INITIAL_WALLET, INITIAL_POSTS, Post } from '../types/mockData';
 
+const formatPostTimestamp = (val: any): string => {
+  if (!val) return 'Just now';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number') {
+    const secsAgo = Math.floor((Date.now() - val) / 1000);
+    if (secsAgo < 60) return 'Just now';
+    if (secsAgo < 3600) return `${Math.floor(secsAgo / 60)}m ago`;
+    if (secsAgo < 86400) return `${Math.floor(secsAgo / 3600)}h ago`;
+    return `${Math.floor(secsAgo / 86400)}d ago`;
+  }
+  if (typeof val === 'object') {
+    if (typeof val.toDate === 'function') {
+      try {
+        const d = val.toDate();
+        const secsAgo = Math.floor((Date.now() - d.getTime()) / 1000);
+        if (secsAgo < 60) return 'Just now';
+        if (secsAgo < 3600) return `${Math.floor(secsAgo / 60)}m ago`;
+        if (secsAgo < 86400) return `${Math.floor(secsAgo / 3600)}h ago`;
+        return `${Math.floor(secsAgo / 86400)}d ago`;
+      } catch (e) {
+        return 'Just now';
+      }
+    }
+    if (typeof val.seconds === 'number') {
+      const secsAgo = Math.floor((Date.now() - val.seconds * 1000) / 1000);
+      if (secsAgo < 60) return 'Just now';
+      if (secsAgo < 3600) return `${Math.floor(secsAgo / 60)}m ago`;
+      if (secsAgo < 86400) return `${Math.floor(secsAgo / 3600)}h ago`;
+      return `${Math.floor(secsAgo / 86400)}d ago`;
+    }
+  }
+  return 'Just now';
+};
+
 export const HomeScreen: React.FC = () => {
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
   const [showIOSGuide, setShowIOSGuide] = React.useState(false);
@@ -219,7 +253,7 @@ export const HomeScreen: React.FC = () => {
           });
         }).catch(() => {});
 
-        // Setup real-time listener for posts, ordering by createdAtTimestamp descending
+        // Setup real-time listener for posts
         const postsQuery = query(
           collection(db, 'posts'),
           orderBy('createdAtTimestamp', 'desc'),
@@ -230,8 +264,8 @@ export const HomeScreen: React.FC = () => {
           const loaded: any[] = [];
           snap.forEach((docSnap) => {
             const data = docSnap.data();
-            const creatorId = data.creator?.id;
-            const creatorUsername = data.creator?.username;
+            const creatorId = data.creator?.id || data.userId || data.user?.uid;
+            const creatorUsername = data.creator?.username || data.user?.username;
 
             const isMock = 
               docSnap.id.startsWith('post_') ||
@@ -241,9 +275,8 @@ export const HomeScreen: React.FC = () => {
               data.videoUrl === '/videos/sample_clip.mp4' ||
               data.videoUrl?.includes('game_clip_action') ||
               data.videoUrl?.includes('sample_clip') ||
-              !data.creator ||
-              !creatorId ||
-              creatorId.startsWith('usr_') ||
+              (!creatorId && !data.user) ||
+              (creatorId && creatorId.startsWith('usr_')) ||
               ['system', 'usr_1', 'usr_2', 'usr_3', 'usr_4', 'usr_5', 'usr_6', 'usr_7'].includes(creatorId) ||
               ['ShadowReaper', 'WarzoneTactics', 'ZeroGravity', 'CyberRonin', 'KiraGhost', 'ViperValk', 'ApexPredator'].includes(creatorUsername);
 
@@ -252,9 +285,21 @@ export const HomeScreen: React.FC = () => {
                 deleteDoc(doc(db, 'posts', docSnap.id)).catch(() => {});
               }
             } else {
+              const creatorObj = data.creator || {
+                id: creatorId || 'gamer',
+                username: creatorUsername || 'gamer',
+                displayName: data.user?.name || data.user?.displayName || 'Gamer',
+                avatar: data.user?.avatar || data.user?.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+                level: 1,
+                xp: 0,
+                isVerified: true
+              };
+
               loaded.push({
                 ...data,
-                id: docSnap.id
+                id: docSnap.id,
+                creator: creatorObj,
+                createdAt: formatPostTimestamp(data.createdAt || data.createdAtTimestamp)
               });
             }
           });
@@ -262,8 +307,45 @@ export const HomeScreen: React.FC = () => {
           setPostsList(loaded);
           setLoadingPosts(false);
         }, (err) => {
-          console.error('Error listening to posts:', err);
-          setLoadingPosts(false);
+          console.error('Error listening to posts with orderBy, falling back to simple query:', err);
+          // Fallback query without orderBy requirement
+          getDocs(collection(db, 'posts')).then((snap) => {
+            const loaded: any[] = [];
+            snap.forEach((docSnap) => {
+              const data = docSnap.data();
+              const creatorId = data.creator?.id || data.userId || data.user?.uid;
+              const creatorUsername = data.creator?.username || data.user?.username;
+
+              const isMock = 
+                docSnap.id.startsWith('post_') ||
+                docSnap.id.startsWith('mock_') ||
+                data.isMock === true ||
+                (!creatorId && !data.user);
+
+              if (!isMock) {
+                const creatorObj = data.creator || {
+                  id: creatorId || 'gamer',
+                  username: creatorUsername || 'gamer',
+                  displayName: data.user?.name || data.user?.displayName || 'Gamer',
+                  avatar: data.user?.avatar || data.user?.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+                  level: 1,
+                  xp: 0,
+                  isVerified: true
+                };
+
+                loaded.push({
+                  ...data,
+                  id: docSnap.id,
+                  creator: creatorObj,
+                  createdAt: formatPostTimestamp(data.createdAt || data.createdAtTimestamp)
+                });
+              }
+            });
+
+            loaded.sort((a, b) => (b.createdAtTimestamp || 0) - (a.createdAtTimestamp || 0));
+            setPostsList(loaded);
+            setLoadingPosts(false);
+          }).catch(() => setLoadingPosts(false));
         });
 
       } catch (err) {

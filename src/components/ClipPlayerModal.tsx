@@ -20,6 +20,40 @@ interface ClipPlayerModalProps {
   onSave: (postId: string) => void;
 }
 
+const formatPostTimestamp = (val: any): string => {
+  if (!val) return 'Just now';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number') {
+    const secsAgo = Math.floor((Date.now() - val) / 1000);
+    if (secsAgo < 60) return 'Just now';
+    if (secsAgo < 3600) return `${Math.floor(secsAgo / 60)}m ago`;
+    if (secsAgo < 86400) return `${Math.floor(secsAgo / 3600)}h ago`;
+    return `${Math.floor(secsAgo / 86400)}d ago`;
+  }
+  if (typeof val === 'object') {
+    if (typeof val.toDate === 'function') {
+      try {
+        const d = val.toDate();
+        const secsAgo = Math.floor((Date.now() - d.getTime()) / 1000);
+        if (secsAgo < 60) return 'Just now';
+        if (secsAgo < 3600) return `${Math.floor(secsAgo / 60)}m ago`;
+        if (secsAgo < 86400) return `${Math.floor(secsAgo / 3600)}h ago`;
+        return `${Math.floor(secsAgo / 86400)}d ago`;
+      } catch (e) {
+        return 'Just now';
+      }
+    }
+    if (typeof val.seconds === 'number') {
+      const secsAgo = Math.floor((Date.now() - val.seconds * 1000) / 1000);
+      if (secsAgo < 60) return 'Just now';
+      if (secsAgo < 3600) return `${Math.floor(secsAgo / 60)}m ago`;
+      if (secsAgo < 86400) return `${Math.floor(secsAgo / 86400)}d ago`;
+      return `${Math.floor(secsAgo / 86400)}d ago`;
+    }
+  }
+  return 'Just now';
+};
+
 export const ClipPlayerModal: React.FC<ClipPlayerModalProps> = ({
   post,
   currentUserId,
@@ -553,7 +587,7 @@ export const ClipPlayerModal: React.FC<ClipPlayerModalProps> = ({
                         <span className="font-bold text-white text-[11px]">
                           {c.user.displayName || c.user.username}{isCommentAuthorYou ? '(You)' : ''}
                         </span>
-                        <span className="text-[10px] text-[#777777]">{c.createdAt}</span>
+                        <span className="text-[10px] text-[#777777]">{formatPostTimestamp(c.createdAt)}</span>
                       </div>
                       <p className="text-[#CCCCCC] text-xs leading-relaxed">{c.text}</p>
                     </div>

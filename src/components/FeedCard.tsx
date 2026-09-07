@@ -23,6 +23,40 @@ interface FeedCardProps {
   onSave: (postId: string) => void;
 }
 
+const formatPostTimestamp = (val: any): string => {
+  if (!val) return 'Just now';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number') {
+    const secsAgo = Math.floor((Date.now() - val) / 1000);
+    if (secsAgo < 60) return 'Just now';
+    if (secsAgo < 3600) return `${Math.floor(secsAgo / 60)}m ago`;
+    if (secsAgo < 86400) return `${Math.floor(secsAgo / 3600)}h ago`;
+    return `${Math.floor(secsAgo / 86400)}d ago`;
+  }
+  if (typeof val === 'object') {
+    if (typeof val.toDate === 'function') {
+      try {
+        const d = val.toDate();
+        const secsAgo = Math.floor((Date.now() - d.getTime()) / 1000);
+        if (secsAgo < 60) return 'Just now';
+        if (secsAgo < 3600) return `${Math.floor(secsAgo / 60)}m ago`;
+        if (secsAgo < 86400) return `${Math.floor(secsAgo / 3600)}h ago`;
+        return `${Math.floor(secsAgo / 86400)}d ago`;
+      } catch (e) {
+        return 'Just now';
+      }
+    }
+    if (typeof val.seconds === 'number') {
+      const secsAgo = Math.floor((Date.now() - val.seconds * 1000) / 1000);
+      if (secsAgo < 60) return 'Just now';
+      if (secsAgo < 3600) return `${Math.floor(secsAgo / 60)}m ago`;
+      if (secsAgo < 86400) return `${Math.floor(secsAgo / 3600)}h ago`;
+      return `${Math.floor(secsAgo / 86400)}d ago`;
+    }
+  }
+  return 'Just now';
+};
+
 export const FeedCard: React.FC<FeedCardProps> = ({
   post,
   currentUserId,
@@ -371,7 +405,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
             <div className="flex items-center gap-2 text-xs text-[#999999]">
               <span>@{post.creator.username}{isOwnPost ? '(You)' : ''}</span>
               <span>•</span>
-              <span className="text-[11px] text-[#777777]">{post.createdAt}</span>
+              <span className="text-[11px] text-[#777777]">{formatPostTimestamp(post.createdAt)}</span>
             </div>
           </div>
         </div>
@@ -746,7 +780,7 @@ export const FeedCard: React.FC<FeedCardProps> = ({
                         <span className="font-bold text-white truncate">
                           {c.user.displayName || c.user.username}{isCommentAuthorYou ? '(You)' : ''}
                         </span>
-                        <span className="text-[10px] text-[#666666] flex-shrink-0">{c.createdAt}</span>
+                        <span className="text-[10px] text-[#666666] flex-shrink-0">{formatPostTimestamp(c.createdAt)}</span>
                       </div>
                       <p className="text-[#CCCCCC] text-xs mt-0.5 break-words">{c.text}</p>
                     </div>

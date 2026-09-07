@@ -1,20 +1,20 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  Plus, Image, Video, Film, Trash2, ArrowLeft, Send, Sparkles, 
-  Check, AlertCircle, Play, Sliders, Hash, Loader2, Gamepad2
+  ArrowLeft, Video, Image, Send, Trash2, AlertCircle, 
+  Loader2, Scissors, Plus, Hash, X, Clock, UploadCloud,
+  Play, Pause
 } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
 import { collection, addDoc, doc, getDoc, serverTimestamp } from 'firebase/firestore';
-import { saveVideoToCache, uploadVideoToCloud } from '../lib/videoStorage';
 import { uploadToR2 } from '../lib/uploadMedia';
-import { AVAILABLE_GAMES, getGameMeta } from '../data/gamesAndPlatforms';
+import { AVAILABLE_GAMES } from '../data/gamesAndPlatforms';
 
 interface CreatePostScreenProps {
   onBack?: () => void;
   onPostCreated?: () => void;
 }
 
-const PRESET_TAGS = ['Clutch', 'Sniper', 'SoloVQuad', '1080p', '60FPS', 'Ranked', 'SquadWipe', 'Highlights', 'ProPlayer', 'GamingLife'];
+const PRESET_TAGS = ['Clutch', 'Sniper', 'SoloVQuad', 'Ranked', 'SquadWipe', 'Highlights', 'ProPlayer', 'GamingLife', 'Victory', 'ApexLegends'];
 
 export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPostCreated }) => {
   const [postType, setPostType] = useState<'clip' | 'image' | 'text'>('clip');
@@ -23,41 +23,41 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
   const [selectedGame, setSelectedGame] = useState('Gaming');
   const [tags, setTags] = useState<string[]>([]);
   const [customTag, setCustomTag] = useState('');
-  const [imageFiles, setImageFiles] = useState<File[]>([]);
+
+  // Media files & previews
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoPreview, setVideoPreview] = useState<string | null>(null);
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
-  
-  // Trimming & Compression simulation state
+
+  // Trimming State (Max 2 minutes = 120s)
   const [videoDuration, setVideoDuration] = useState<number>(0);
   const [trimStart, setTrimStart] = useState<number>(0);
   const [trimEnd, setTrimEnd] = useState<number>(0);
-  const [isVideoTooLong, setIsVideoTooLong] = useState(false);
-  const [isProcessingMedia, setIsProcessingMedia] = useState(false);
-  const [processingProgress, setProcessingProgress] = useState(0);
-  const [processingStatus, setProcessingStatus] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+
+  // Upload state
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStatus, setUploadStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const videoPreviewRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
-  // Always ensure posts screen starts at the top of the page on mount
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   }, []);
 
-  // Auto scroll to error or status changes
   useEffect(() => {
     if (error) {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }, [error]);
 
-  // Video looping playback limits
+  // Video playback loop between trim boundaries
   useEffect(() => {
-    const video = videoPreviewRef.current;
+    const video = videoRef.current;
     if (!video || postType !== 'clip' || !videoFile) return;
 
     const handleTimeUpdate = () => {
@@ -66,7 +66,6 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
       }
       if (video.currentTime >= trimEnd) {
         video.currentTime = trimStart;
-        video.play().catch(() => {});
       }
     };
 
@@ -74,150 +73,92 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
     return () => {
       video.removeEventListener('timeupdate', handleTimeUpdate);
     };
-  }, [trimStart, trimEnd, postType, videoPreview, videoFile]);
+  }, [trimStart, trimEnd, postType, videoFile]);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files ? (Array.from(e.target.files) as File[]) : [];
+  // Clean object URLs
+  useEffect(() => {
+    return () => {
+      if (videoPreview) URL.revokeObjectURL(videoPreview);
+      imagePreviews.forEach(url => URL.revokeObjectURL(url));
+    };
+  }, [videoPreview, imagePreviews]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files: File[] = e.target.files ? Array.from(e.target.files) : [];
     if (!files.length) return;
 
     setError(null);
-    setVideoDuration(0);
-    setIsVideoTooLong(false);
 
     if (postType === 'clip') {
       const file = files[0];
-      if (file.type.startsWith('video/')) {
-        setVideoFile(file);
-        setImageFiles([]);
-        setImagePreviews([]);
-        
-        const objectUrl = URL.createObjectURL(file);
-        setVideoPreview(objectUrl);
-
-        // Read video metadata for length and resolution
-        const videoElement = document.createElement('video');
-        videoElement.preload = 'metadata';
-        videoElement.src = objectUrl;
-        videoElement.onloadedmetadata = () => {
-          const duration = videoElement.duration;
-          setVideoDuration(duration);
-          setTrimStart(0);
-          setTrimEnd(Math.min(duration, 120));
-          if (duration > 120) {
-            setIsVideoTooLong(true);
-          }
-        };
-      } else {
-        setError('Please select a valid video file.');
+      if (!file.type.startsWith('video/')) {
+        setError('Please select a valid video file (.mp4, .webm, .mov).');
+        return;
       }
-    } else {
-      const newImages = files.filter(f => f.type.startsWith('image/'));
-      if (!newImages.length) {
+
+      setVideoFile(file);
+      setImageFiles([]);
+      setImagePreviews([]);
+
+      const objectUrl = URL.createObjectURL(file);
+      setVideoPreview(objectUrl);
+
+      // Read video duration
+      const tempVideo = document.createElement('video');
+      tempVideo.preload = 'metadata';
+      tempVideo.src = objectUrl;
+      tempVideo.onloadedmetadata = () => {
+        const dur = tempVideo.duration || 0;
+        setVideoDuration(dur);
+        setTrimStart(0);
+        setTrimEnd(Math.min(dur, 120)); // Auto set initial trim to first 120 seconds max
+      };
+    } else if (postType === 'image') {
+      const selectedImages = files.filter(f => f.type.startsWith('image/'));
+      if (!selectedImages.length) {
         setError('Please select valid image files.');
         return;
       }
-      
-      const totalImages = imageFiles.length + newImages.length;
-      if (totalImages > 10) {
-        setError('You can only upload up to 10 images.');
-        newImages.splice(10 - imageFiles.length);
+
+      if (imageFiles.length + selectedImages.length > 10) {
+        setError('Maximum of 10 images allowed per post.');
+        selectedImages.splice(10 - imageFiles.length);
       }
-      
-      setImageFiles(prev => [...prev, ...newImages]);
+
+      setImageFiles(prev => [...prev, ...selectedImages]);
       setVideoFile(null);
       setVideoPreview(null);
-      
-      newImages.forEach(file => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setImagePreviews(prev => [...prev, reader.result as string]);
-        };
-        reader.readAsDataURL(file);
-      });
+
+      const newPreviews = selectedImages.map(f => URL.createObjectURL(f));
+      setImagePreviews(prev => [...prev, ...newPreviews]);
     }
   };
 
-  const trimmedDuration = Math.max(0, trimEnd - trimStart);
-  const isTrimTooLong = trimmedDuration > 120;
-
-  const compressAndProcessMedia = async (): Promise<{ mediaUrl: string; thumbnailUrl: string; duration: string; imageUrls?: string[] }> => {
-    return new Promise(async (resolve, reject) => {
-      setIsProcessingMedia(true);
-      setProcessingProgress(15);
-      
-      try {
-        if (postType === 'clip' && videoFile) {
-          setProcessingProgress(40);
-          setProcessingStatus('Uploading video directly to Cloudflare R2...');
-
-          let finalMediaUrl = '';
-          let capturedThumbnail = 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&auto=format&fit=crop&q=80';
-
-          const r2Result = await uploadToR2(videoFile);
-          if (r2Result && r2Result.url && r2Result.url.startsWith('http')) {
-            finalMediaUrl = r2Result.url;
-            if (r2Result.thumbnailUrl) {
-              capturedThumbnail = r2Result.thumbnailUrl;
-            }
-          }
-
-          if (!finalMediaUrl) {
-            throw new Error('Failed to upload video clip to Cloudflare R2.');
-          }
-
-          setProcessingProgress(100);
-          setProcessingStatus('Video upload complete!');
-
-          setTimeout(() => {
-            setIsProcessingMedia(false);
-            const minutes = Math.floor(trimmedDuration / 60);
-            const seconds = Math.floor(trimmedDuration % 60).toString().padStart(2, '0');
-            
-            resolve({
-              mediaUrl: finalMediaUrl,
-              thumbnailUrl: capturedThumbnail,
-              duration: `${minutes}:${seconds}`
-            });
-          }, 350);
-          
-        } else if (postType === 'image' && imageFiles.length > 0) {
-          setProcessingStatus('Uploading images to Cloudflare R2...');
-          
-          const uploadedImageUrls: string[] = [];
-          
-          for (let i = 0; i < imageFiles.length; i++) {
-            setProcessingProgress(15 + Math.floor(((i + 1) / imageFiles.length) * 80));
-            const r2Res = await uploadToR2(imageFiles[i]);
-            if (r2Res && r2Res.url && r2Res.url.startsWith('http')) {
-              uploadedImageUrls.push(r2Res.url);
-            } else {
-              throw new Error(`Failed to upload image ${i + 1} to Cloudflare R2.`);
-            }
-          }
-
-          setProcessingProgress(100);
-          setProcessingStatus('Images uploaded to Cloudflare R2 successfully!');
-          
-          setTimeout(() => {
-            setIsProcessingMedia(false);
-            resolve({
-              mediaUrl: uploadedImageUrls[0] || '',
-              thumbnailUrl: uploadedImageUrls[0] || '',
-              duration: '0:00',
-              imageUrls: uploadedImageUrls
-            });
-          }, 350);
-          
-        } else {
-          setIsProcessingMedia(false);
-          reject(new Error("No media provided"));
-        }
-      } catch (err) {
-        setIsProcessingMedia(false);
-        reject(err);
-      }
-    });
+  const removeImage = (index: number) => {
+    setImageFiles(prev => prev.filter((_, i) => i !== index));
+    setImagePreviews(prev => prev.filter((_, i) => i !== index));
   };
+
+  const clearVideo = () => {
+    if (videoPreview) URL.revokeObjectURL(videoPreview);
+    setVideoFile(null);
+    setVideoPreview(null);
+    setVideoDuration(0);
+    setTrimStart(0);
+    setTrimEnd(0);
+  };
+
+  const togglePlay = () => {
+    if (!videoRef.current) return;
+    if (isPlaying) {
+      videoRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      videoRef.current.currentTime = trimStart;
+      videoRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
+    }
+  };
+
   const handleToggleTag = (tag: string) => {
     if (tags.includes(tag)) {
       setTags(prev => prev.filter(t => t !== tag));
@@ -232,9 +173,9 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
 
   const handleAddCustomTag = (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanTag = customTag.trim().replace(/^#/, '');
-    if (!cleanTag) return;
-    if (tags.includes(cleanTag)) {
+    const clean = customTag.trim().replace(/^#/, '');
+    if (!clean) return;
+    if (tags.includes(clean)) {
       setCustomTag('');
       return;
     }
@@ -242,542 +183,692 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
       setError('Maximum of 5 tags allowed.');
       return;
     }
-    setTags(prev => [...prev, cleanTag]);
+    setTags(prev => [...prev, clean]);
     setCustomTag('');
   };
 
+  // Trim video segment before uploading
+  const prepareVideoForUpload = async (file: File, start: number, end: number, totalDuration: number): Promise<File> => {
+    // If video is under 120s and start is 0 and end covers video, send raw file
+    if (start <= 0.1 && (end <= 0 || Math.abs(end - totalDuration) <= 1.0)) {
+      return file;
+    }
+
+    return new Promise((resolve) => {
+      try {
+        const video = document.createElement('video');
+        video.src = URL.createObjectURL(file);
+        video.currentTime = start;
+        video.muted = true;
+
+        video.onseeked = async () => {
+          try {
+            const stream = (video as any).captureStream ? (video as any).captureStream() : (video as any).mozCaptureStream();
+            const mimeType = MediaRecorder.isTypeSupported('video/mp4;codecs=avc1')
+              ? 'video/mp4;codecs=avc1'
+              : MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+              ? 'video/webm;codecs=vp9'
+              : 'video/webm';
+
+            const recorder = new MediaRecorder(stream, { mimeType });
+            const chunks: Blob[] = [];
+
+            recorder.ondataavailable = e => {
+              if (e.data.size > 0) chunks.push(e.data);
+            };
+
+            recorder.onstop = () => {
+              URL.revokeObjectURL(video.src);
+              const blob = new Blob(chunks, { type: mimeType });
+              const trimmedFile = new File([blob], `trimmed_${file.name}`, { type: mimeType });
+              resolve(trimmedFile);
+            };
+
+            recorder.start(100);
+            await video.play();
+
+            const checkInterval = setInterval(() => {
+              if (video.currentTime >= end || video.ended) {
+                clearInterval(checkInterval);
+                video.pause();
+                recorder.stop();
+              }
+            }, 50);
+          } catch (e) {
+            console.warn('Trim capture fallback:', e);
+            URL.revokeObjectURL(video.src);
+            resolve(file);
+          }
+        };
+
+        video.onerror = () => {
+          resolve(file);
+        };
+      } catch (err) {
+        console.warn('Trim recording error:', err);
+        resolve(file);
+      }
+    });
+  };
+
+  const selectedSpan = Math.max(0, trimEnd - trimStart);
+  const isTrimOverLimit = selectedSpan > 120.5;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmitting || isProcessingMedia) return;
+    if (isUploading) return;
 
     if (!caption.trim()) {
-      setError('Caption is required.');
+      setError('Please enter a description for your post.');
       return;
     }
 
-    if (postType === 'clip' && !title.trim()) {
-      setError('A post title is required for sharing video clips.');
-      return;
-    }
-
-    if (postType === 'clip' && !videoFile) {
-      setError('Please attach a video clip.');
-      return;
-    }
-
-    if (postType === 'clip' && isTrimTooLong) {
-      setError('Please adjust your trim selection to be under 2 minutes.');
-      return;
+    if (postType === 'clip') {
+      if (!title.trim()) {
+        setError('Please enter a title for your video clip.');
+        return;
+      }
+      if (!videoFile) {
+        setError('Please attach a gaming video clip.');
+        return;
+      }
+      if (isTrimOverLimit) {
+        setError('Video duration must be trimmed to 2 minutes (120s) or less.');
+        return;
+      }
     }
 
     if (postType === 'image' && imageFiles.length === 0) {
-      setError('Please attach an image.');
+      setError('Please attach at least one image.');
       return;
     }
 
-    setIsSubmitting(true);
+    setIsUploading(true);
     setError(null);
+    setUploadProgress(15);
+    setUploadStatus('Processing video clip...');
 
     try {
       const user = auth.currentUser;
-      if (!user) throw new Error('You must be signed in to create posts.');
+      if (!user) throw new Error('You must be signed in to publish posts.');
 
-      // Load user profile details
+      // Fetch user profile
       const userDocRef = doc(db, 'users', user.uid);
       const userSnap = await getDoc(userDocRef);
       const userProfile = userSnap.exists() ? userSnap.data() : null;
 
-      // 1. Locally compress/transcode the media (FFmpeg and canvas simulator)
-      const mediaResults = await compressAndProcessMedia();
+      let finalVideoUrl = '';
+      let finalThumbnailUrl = 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&auto=format&fit=crop&q=80';
+      const uploadedImageUrls: string[] = [];
+      let formattedDuration = '0:00';
 
-      // 2. Build the Post object
+      if (postType === 'clip' && videoFile) {
+        setUploadProgress(30);
+        setUploadStatus('Trimming selected 2-minute highlight...');
+
+        const videoToUpload = await prepareVideoForUpload(videoFile, trimStart, trimEnd, videoDuration);
+
+        setUploadProgress(60);
+        setUploadStatus('Uploading video clip...');
+
+        const r2Res = await uploadToR2(videoToUpload);
+        if (!r2Res || !r2Res.url || !r2Res.url.startsWith('http')) {
+          throw new Error('Failed to upload video clip. Please try again.');
+        }
+
+        finalVideoUrl = r2Res.url;
+        if (r2Res.thumbnailUrl) {
+          finalThumbnailUrl = r2Res.thumbnailUrl;
+        }
+
+        const mins = Math.floor(selectedSpan / 60);
+        const secs = Math.floor(selectedSpan % 60).toString().padStart(2, '0');
+        formattedDuration = `${mins}:${secs}`;
+      } else if (postType === 'image' && imageFiles.length > 0) {
+        setUploadStatus('Uploading images...');
+
+        for (let i = 0; i < imageFiles.length; i++) {
+          setUploadProgress(20 + Math.floor(((i + 1) / imageFiles.length) * 60));
+          const r2Res = await uploadToR2(imageFiles[i]);
+          if (!r2Res || !r2Res.url || !r2Res.url.startsWith('http')) {
+            throw new Error(`Failed to upload image ${i + 1}.`);
+          }
+          uploadedImageUrls.push(r2Res.url);
+        }
+      }
+
+      setUploadProgress(90);
+      setUploadStatus('Publishing post...');
+
+      const currentGamertag = userProfile?.gamertag || userProfile?.gamertagLower || user.displayName || 'gamer';
+      const currentDisplayName = userProfile?.name || userProfile?.gamertag || user.displayName || 'Gamer';
+      const currentAvatar = userProfile?.photoURL || user.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80';
+
       const postPayload = {
         title: postType === 'clip' ? title.trim() : '',
         caption: caption.trim(),
         game: selectedGame.trim(),
         gameCategory: selectedGame.trim(),
-        videoUrl: postType === 'clip' ? mediaResults.mediaUrl : '',
-        thumbnailUrl: mediaResults.thumbnailUrl,
-        imageUrls: postType === 'image' ? mediaResults.imageUrls : [],
-        duration: mediaResults.duration,
+        videoUrl: postType === 'clip' ? finalVideoUrl : '',
+        thumbnailUrl: postType === 'clip' ? finalThumbnailUrl : (uploadedImageUrls[0] || ''),
+        imageUrls: postType === 'image' ? uploadedImageUrls : [],
+        duration: formattedDuration,
         isNew: true,
         likesCount: 0,
         commentsCount: 0,
         sharesCount: 0,
         viewsCount: 1,
         isLiked: false,
-        isSaved: false,
-        tags: tags,
-        createdAt: 'Just now',
-        createdAtTimestamp: serverTimestamp(),
+        userId: user.uid,
         creator: {
           id: user.uid,
-          username: userProfile?.gamertag || user.email?.split('@')[0] || 'gamer',
-          displayName: userProfile?.name || userProfile?.gamertag || 'Gamer',
-          avatar: userProfile?.photoURL || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=150&auto=format&fit=crop&q=80',
-          isVerified: userProfile?.isVerified || false,
-          isPremium: userProfile?.isPremium || false,
+          username: currentGamertag,
+          displayName: currentDisplayName,
+          avatar: currentAvatar,
           level: userProfile?.level || 1,
-        }
+          xp: userProfile?.xp || 0,
+          isVerified: true
+        },
+        user: {
+          uid: user.uid,
+          name: currentDisplayName,
+          username: currentGamertag,
+          avatar: currentAvatar,
+          verified: true
+        },
+        createdAt: serverTimestamp(),
+        createdAtTimestamp: Date.now(),
+        tags: tags
       };
 
-      // 3. Write post directly to Firestore
       await addDoc(collection(db, 'posts'), postPayload);
-      
-      setSuccess(true);
+
+      setUploadProgress(100);
+      setUploadStatus('Post published!');
+
       setTimeout(() => {
-        if (onPostCreated) onPostCreated();
-        if (onBack) onBack();
-      }, 1500);
+        setIsUploading(false);
+        if (onPostCreated) {
+          onPostCreated();
+        } else if (onBack) {
+          onBack();
+        }
+      }, 400);
 
     } catch (err: any) {
-      console.error(err);
-      setError(err?.message || 'An error occurred while creating your post. Please try again.');
-    } finally {
-      setIsSubmitting(false);
+      console.error('Post submission error:', err);
+      setIsUploading(false);
+      setError(err?.message || 'Failed to publish post. Please check your connection.');
     }
   };
 
+  const formatSecs = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
   return (
-    <div className="flex-1 w-full bg-[#121212] text-white flex flex-col min-h-screen">
-      {/* Main Form Body */}
-      <form onSubmit={handleSubmit} className="flex-1 max-w-2xl w-full mx-auto p-4 flex flex-col gap-6 pb-24">
+    <div className="min-h-screen bg-[#121212] text-white pt-14 pb-24 px-4 sm:px-6">
+      {/* Hidden File Input */}
+      <input 
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileSelect}
+        accept={postType === 'clip' ? 'video/mp4,video/webm,video/quicktime,video/*' : 'image/*'}
+        multiple={postType === 'image'}
+        className="hidden"
+      />
+
+      <div className="max-w-2xl mx-auto space-y-6">
+        
+        {/* Top Header Nav */}
+        <div className="flex items-center gap-3 border-b border-[#282828] pb-4">
+          {onBack && (
+            <button 
+              type="button"
+              onClick={onBack}
+              className="p-2.5 rounded-xl bg-[#1e1e1e] border border-[#333333] text-gray-300 hover:text-white hover:bg-[#2a2a2a] transition-all cursor-pointer"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+          )}
+          <div>
+            <h1 className="text-xl sm:text-2xl font-black uppercase tracking-wider text-white">
+              Create Post
+            </h1>
+            <p className="text-xs text-gray-400 font-medium">
+              Share your gaming highlights, clips, and screenshots with the squad
+            </p>
+          </div>
+        </div>
+
+        {/* Error Notification Banner */}
         {error && (
-          <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-2xl flex items-start gap-3 text-red-400 text-sm animate-in fade-in slide-in-from-top-5 duration-300">
-            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-            <div>
-              <span className="font-bold">Execution Blocked:</span>
-              <p className="mt-1 leading-relaxed text-[#eeaaaa]">{error}</p>
+          <div className="p-4 rounded-xl bg-red-950/80 border border-red-500/50 text-red-200 text-sm flex items-start gap-3 animate-in fade-in duration-200">
+            <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-bold text-red-100">Action Required</p>
+              <p className="text-red-200/90 text-xs mt-0.5">{error}</p>
             </div>
+            <button onClick={() => setError(null)} className="text-red-400 hover:text-white p-1 cursor-pointer">
+              <X className="w-4 h-4" />
+            </button>
           </div>
         )}
 
-        {success && (
-          <div className="bg-emerald-500/10 border border-emerald-500/30 p-5 rounded-2xl flex items-center gap-3 text-emerald-400 font-bold text-sm animate-in zoom-in-95 duration-300">
-            <Check className="w-5 h-5 text-emerald-500 bg-emerald-500/10 p-1 rounded-full" />
-            Post uploaded successfully! Going back to your Feed...
-          </div>
-        )}
-
-        {/* 1. Post Type Toggle */}
-        <div className="bg-[#1a1a1a] p-1.5 rounded-2xl flex border border-[#2a2a2e] gap-1">
+        {/* Post Type Selector Tabs */}
+        <div className="grid grid-cols-3 gap-2 p-1.5 rounded-2xl bg-[#1e1e1e] border border-[#2a2a2a]">
           <button
             type="button"
             onClick={() => {
               setPostType('clip');
-              setVideoPreview(null); setImagePreviews([]);
-              setVideoFile(null);
-              setImageFiles([]);
-              setVideoDuration(0);
-              setIsVideoTooLong(false);
+              setError(null);
             }}
-            className={`flex-1 py-3.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${postType === 'clip' ? 'bg-[#5003BD] text-white shadow-md' : 'text-[#888888] hover:text-white hover:bg-[#232326]'}`}
+            className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+              postType === 'clip' 
+                ? 'bg-[#5003BD] text-white shadow-md' 
+                : 'text-gray-400 hover:text-white hover:bg-[#282828]'
+            }`}
           >
-            <Film className="w-4 h-4" /> Gaming Clip
+            <Video className="w-4 h-4" />
+            <span>Gaming Clip</span>
           </button>
+
           <button
             type="button"
             onClick={() => {
               setPostType('image');
-              setVideoPreview(null); setImagePreviews([]);
-              setVideoFile(null);
-              setImageFiles([]);
-              setVideoDuration(0);
-              setIsVideoTooLong(false);
+              setError(null);
             }}
-            className={`flex-1 py-3.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${postType === 'image' ? 'bg-[#5003BD] text-white shadow-md' : 'text-[#888888] hover:text-white hover:bg-[#232326]'}`}
+            className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+              postType === 'image' 
+                ? 'bg-[#5003BD] text-white shadow-md' 
+                : 'text-gray-400 hover:text-white hover:bg-[#282828]'
+            }`}
           >
-            <Image className="w-4 h-4" /> Image
+            <Image className="w-4 h-4" />
+            <span>Media Gallery</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setPostType('text');
+              setError(null);
+            }}
+            className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+              postType === 'text' 
+                ? 'bg-[#5003BD] text-white shadow-md' 
+                : 'text-gray-400 hover:text-white hover:bg-[#282828]'
+            }`}
+          >
+            <Hash className="w-4 h-4" />
+            <span>Discussion</span>
           </button>
         </div>
 
-        {/* 2. Media Upload & Processing Area */}
-        <div className="flex flex-col gap-2">
-          <label className="text-sm font-bold text-[#aaaaaa]">ATTACH MEDIA</label>
-          <div 
-            onClick={() => fileInputRef.current?.click()}
-            className={`relative rounded-3xl border-2 border-dashed bg-[#1a1a1a] overflow-hidden min-h-[220px] flex flex-col items-center justify-center cursor-pointer p-6 group transition-all duration-300 hover:bg-[#1d1d21] ${(videoPreview || imagePreviews.length > 0) ? 'border-[#5003BD]/50' : 'border-[#2a2a2e] hover:border-[#5003BD]/40'}`}
-          >
-            <input 
-              ref={fileInputRef}
-              type="file" 
-              accept={postType === 'clip' ? 'video/*' : 'image/*'}
-              multiple={postType === 'image'}
-              onChange={handleFileChange}
-              className="hidden"
-            />
-
-            {(videoPreview || imagePreviews.length > 0) ? (
-              <div className="w-full h-full absolute inset-0 flex flex-col items-center justify-center bg-black/40">
-                {postType === 'clip' ? (
-                  <video 
-                    ref={videoPreviewRef}
-                    src={videoPreview || undefined} 
-                    className="w-full h-full object-contain bg-black"
-                    controls
-                    playsInline
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center gap-2 overflow-x-auto p-4 snap-x">
-                    {imagePreviews.map((preview, idx) => (
-                      <div key={idx} className="relative h-full aspect-[9/16] sm:aspect-square flex-shrink-0 snap-center rounded-xl overflow-hidden border border-white/10 group/img">
-                        <img 
-                          src={preview} 
-                          alt={`Preview ${idx + 1}`} 
-                          className="w-full h-full object-cover" 
-                        />
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setImageFiles(prev => prev.filter((_, i) => i !== idx));
-                            setImagePreviews(prev => prev.filter((_, i) => i !== idx));
-                          }}
-                          className="absolute top-2 right-2 p-1.5 bg-black/80 hover:bg-red-600 rounded-full opacity-0 group-hover/img:opacity-100 transition-all"
-                        >
-                          <Trash2 className="w-4 h-4 text-white" />
-                        </button>
-                      </div>
-                    ))}
-                    {imagePreviews.length < 10 && (
-                      <div 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          fileInputRef.current?.click();
-                        }}
-                        className="h-full aspect-[9/16] sm:aspect-square flex-shrink-0 rounded-xl border-2 border-dashed border-[#5003BD]/50 flex items-center justify-center bg-black/40 hover:bg-black/60 transition-colors cursor-pointer"
-                      >
-                        <Plus className="w-8 h-8 text-[#5003BD]" />
-                      </div>
-                    )}
-                  </div>
-                )}
-                
-                {/* Delete Button overlay (only for video) */}
-                {postType === 'clip' && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setVideoPreview(null);
-                      setVideoFile(null);
-                      setVideoDuration(0);
-                      setIsVideoTooLong(false);
-                      setTrimStart(0);
-                      setTrimEnd(0);
-                    }}
-                    className="absolute top-4 right-4 p-2.5 bg-black/80 hover:bg-red-600 rounded-full transition-colors group/del"
-                    title="Remove file"
-                  >
-                    <Trash2 className="w-5 h-5 text-gray-300 group-hover/del:text-white" />
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="text-center flex flex-col items-center gap-3">
-                <div className="p-4 bg-[#232326] rounded-2xl group-hover:scale-110 transition-transform duration-300 border border-[#2a2a2e]">
-                  {postType === 'clip' ? (
-                    <Video className="w-8 h-8 text-[#5003BD]" />
-                  ) : (
-                    <Image className="w-8 h-8 text-[#5003BD]" />
-                  )}
+        {/* Media Selection / Upload Section */}
+        {postType === 'clip' && (
+          <div className="space-y-4">
+            {!videoFile ? (
+              <div 
+                onClick={() => fileInputRef.current?.click()}
+                className="group relative border-2 border-dashed border-[#3d3d3d] hover:border-[#5003BD] rounded-3xl p-8 sm:p-12 text-center bg-[#181818] hover:bg-[#1f1f1f] transition-all cursor-pointer flex flex-col items-center justify-center gap-4"
+              >
+                <div className="p-4 rounded-2xl bg-[#282828] border border-[#3a3a3a] text-purple-400 group-hover:scale-110 transition-all">
+                  <UploadCloud className="w-10 h-10" />
                 </div>
                 <div>
-                  <p className="font-bold text-white text-sm">
-                    Drag and drop your {postType === 'clip' ? 'video' : 'image'} here, or <span className="text-[#5003BD] hover:underline">browse</span>
+                  <p className="font-bold text-base sm:text-lg text-white">
+                    Tap to select gaming video clip
                   </p>
-                  <p className="text-xs text-[#888888] mt-1.5 leading-relaxed">
-                    {postType === 'clip' ? 'MP4, MOV up to 2 min (1080p Cap)' : 'PNG, JPG, WEBP compressed locally'}
+                  <p className="text-xs text-gray-400 mt-1">
+                    Supports MP4, WEBM, MOV • Max 2 minutes (120s)
                   </p>
+                </div>
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#222222] border border-[#333333] text-xs font-medium text-gray-300">
+                  <Clock className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Clips over 2 minutes can be trimmed using the built-in tool</span>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4 rounded-3xl bg-[#181818] border border-[#2a2a2a] p-4 sm:p-6">
+                
+                {/* Video Player & Preview */}
+                <div className="relative rounded-2xl overflow-hidden bg-black aspect-video border border-[#2e2e2e] flex items-center justify-center group">
+                  {videoPreview && (
+                    <video
+                      ref={videoRef}
+                      src={videoPreview}
+                      className="w-full h-full object-contain"
+                      playsInline
+                      muted
+                      loop={false}
+                    />
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={togglePlay}
+                    className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                  >
+                    <div className="p-4 rounded-full bg-[#5003BD] text-white shadow-xl hover:scale-110 transition-transform">
+                      {isPlaying ? <Pause className="w-8 h-8" /> : <Play className="w-8 h-8 fill-current ml-1" />}
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={clearVideo}
+                    className="absolute top-3 right-3 p-2 rounded-xl bg-black/80 border border-red-500/40 text-red-400 hover:text-white hover:bg-red-600 transition-all cursor-pointer shadow-lg z-10"
+                    title="Remove Video"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+
+                  <div className="absolute bottom-3 left-3 px-3 py-1.5 rounded-lg bg-black/80 border border-white/10 text-xs font-mono font-bold text-gray-200">
+                    Selected Segment: {formatSecs(selectedSpan)} / 2:00 max
+                  </div>
+                </div>
+
+                {/* Trimming Controls for Video */}
+                <div className="p-4 rounded-2xl bg-[#202020] border border-[#303030] space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Scissors className="w-4 h-4 text-purple-400" />
+                      <span className="font-bold text-sm text-white uppercase tracking-wider">
+                        Video Trim Selector
+                      </span>
+                    </div>
+
+                    <span className="text-xs font-mono font-semibold text-gray-400">
+                      Total Length: {formatSecs(videoDuration)}
+                    </span>
+                  </div>
+
+                  {videoDuration > 120 && (
+                    <div className="p-2.5 rounded-xl bg-amber-950/60 border border-amber-500/40 text-amber-200 text-xs font-medium">
+                      ⚡ Video is longer than 2 minutes. Use the sliders below to pick your favorite 2-minute highlight segment to trim before publishing.
+                    </div>
+                  )}
+
+                  {/* Trim Range Handles */}
+                  <div className="space-y-3 pt-1">
+                    {/* Start Time */}
+                    <div>
+                      <div className="flex justify-between text-xs font-medium text-gray-300 mb-1">
+                        <span>Trim Start: <strong className="text-purple-300 font-mono">{formatSecs(trimStart)}</strong></span>
+                        <div className="flex items-center gap-1">
+                          <button 
+                            type="button" 
+                            onClick={() => setTrimStart(prev => Math.max(0, prev - 1))}
+                            className="px-2 py-0.5 rounded bg-[#2c2c2c] text-[10px] hover:bg-[#383838] font-bold text-gray-200 cursor-pointer"
+                          >
+                            -1s
+                          </button>
+                          <button 
+                            type="button" 
+                            onClick={() => setTrimStart(prev => Math.min(trimEnd - 1, prev + 1))}
+                            className="px-2 py-0.5 rounded bg-[#2c2c2c] text-[10px] hover:bg-[#383838] font-bold text-gray-200 cursor-pointer"
+                          >
+                            +1s
+                          </button>
+                        </div>
+                      </div>
+                      <input 
+                        type="range"
+                        min={0}
+                        max={Math.max(1, videoDuration - 1)}
+                        step={0.5}
+                        value={trimStart}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          if (val < trimEnd) setTrimStart(val);
+                        }}
+                        className="w-full accent-[#5003BD] cursor-pointer h-2 bg-[#121212] rounded-lg"
+                      />
+                    </div>
+
+                    {/* End Time */}
+                    <div>
+                      <div className="flex justify-between text-xs font-medium text-gray-300 mb-1">
+                        <span>Trim End: <strong className="text-purple-300 font-mono">{formatSecs(trimEnd)}</strong></span>
+                        <div className="flex items-center gap-1">
+                          <button 
+                            type="button" 
+                            onClick={() => setTrimEnd(prev => Math.max(trimStart + 1, prev - 1))}
+                            className="px-2 py-0.5 rounded bg-[#2c2c2c] text-[10px] hover:bg-[#383838] font-bold text-gray-200 cursor-pointer"
+                          >
+                            -1s
+                          </button>
+                          <button 
+                            type="button" 
+                            onClick={() => setTrimEnd(prev => Math.min(videoDuration, prev + 1))}
+                            className="px-2 py-0.5 rounded bg-[#2c2c2c] text-[10px] hover:bg-[#383838] font-bold text-gray-200 cursor-pointer"
+                          >
+                            +1s
+                          </button>
+                        </div>
+                      </div>
+                      <input 
+                        type="range"
+                        min={1}
+                        max={Math.max(1, videoDuration)}
+                        step={0.5}
+                        value={trimEnd}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          if (val > trimStart) setTrimEnd(val);
+                        }}
+                        className="w-full accent-[#5003BD] cursor-pointer h-2 bg-[#121212] rounded-lg"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
           </div>
+        )}
 
-          {/* Video Metadata alerts & Trim Studio */}
-          {videoFile && videoDuration > 0 && (
-            <div className="space-y-3">
-              <div className={`mt-2 p-3 rounded-2xl border flex items-start gap-3 text-xs leading-relaxed ${isTrimTooLong ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'}`}>
-                {isTrimTooLong ? (
-                  <>
-                    <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <span className="font-bold">Length Limit Exceeded:</span> Your selected trim portion is {(trimmedDuration / 60).toFixed(1)}m. 
-                      Please adjust the trim offsets below to be under 2:00 (120 seconds).
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <Check className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <span className="font-bold">Length Verified:</span> Trim selection is {trimmedDuration.toFixed(0)}s (under 2:00 limit). 
-                      Ready to process locally.
-                    </div>
-                  </>
-                )}
+        {/* Media Gallery Selector */}
+        {postType === 'image' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-gray-400">
+                Screenshots ({imageFiles.length}/10)
+              </span>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#222222] border border-[#333333] text-xs font-bold text-gray-200 hover:text-white hover:bg-[#2c2c2c] transition-all cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5 text-purple-400" />
+                <span>Add Images</span>
+              </button>
+            </div>
+
+            {imagePreviews.length === 0 ? (
+              <div 
+                onClick={() => fileInputRef.current?.click()}
+                className="border-2 border-dashed border-[#3a3a3a] hover:border-[#5003BD] rounded-3xl p-8 sm:p-12 text-center bg-[#181818] hover:bg-[#1f1f1f] transition-all cursor-pointer flex flex-col items-center justify-center gap-3"
+              >
+                <Image className="w-10 h-10 text-purple-400" />
+                <p className="font-bold text-sm text-white">
+                  Tap to upload high-res screenshots
+                </p>
+                <p className="text-xs text-gray-400">
+                  Select up to 10 images
+                </p>
               </div>
-
-              {/* Interactive Video Trim Studio Panel */}
-              <div className="bg-[#1a1a1a] border border-[#2a2a2e] rounded-3xl p-5 flex flex-col gap-4 animate-in slide-in-from-top-3 duration-250">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Sliders className="w-4 h-4 text-[#5003BD]" />
-                    <span className="text-xs font-bold text-[#aaaaaa] tracking-wider uppercase">Video Trim Studio</span>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {imagePreviews.map((src, i) => (
+                  <div key={i} className="relative aspect-square rounded-2xl overflow-hidden bg-black border border-[#2a2a2a] group">
+                    <img src={src} alt="Upload preview" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => removeImage(i)}
+                      className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/80 text-red-400 hover:text-white transition-all shadow-md cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
-                  <div className="flex items-center gap-2 bg-[#252528] px-2.5 py-1 rounded-lg border border-[#2a2a2e]">
-                    <span className="text-[11px] text-[#888888] font-mono">Trimmed Span:</span>
-                    <span className="text-[11px] text-white font-bold font-mono">
-                      {Math.floor(trimmedDuration / 60)}:{(Math.floor(trimmedDuration % 60)).toString().padStart(2, '0')}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Range inputs with precise adjust buttons */}
-                <div className="flex flex-col gap-4">
-                  {/* Start Point Slider */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-gray-400">Trim Start</span>
-                      <span className="text-white font-mono font-bold">
-                        {Math.floor(trimStart / 60)}:{(Math.floor(trimStart % 60)).toString().padStart(2, '0')}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button 
-                        type="button" 
-                        onClick={() => setTrimStart(prev => Math.max(0, prev - 1))}
-                        className="p-1 bg-[#232326] hover:bg-[#2e2e33] border border-[#2a2a2e] rounded-lg text-xs font-bold w-10 text-center transition-colors text-gray-300"
-                        title="Back 1 second"
-                      >
-                        -1s
-                      </button>
-                      <input 
-                        type="range"
-                        min="0"
-                        max={videoDuration.toString()}
-                        step="0.5"
-                        value={trimStart}
-                        onChange={(e) => {
-                          const val = parseFloat(e.target.value);
-                          setTrimStart(Math.min(val, trimEnd - 0.5));
-                        }}
-                        className="flex-1 accent-[#5003BD] h-1 bg-[#2a2a2e] rounded-lg cursor-pointer"
-                      />
-                      <button 
-                        type="button" 
-                        onClick={() => setTrimStart(prev => Math.min(trimEnd - 0.5, prev + 1))}
-                        className="p-1 bg-[#232326] hover:bg-[#2e2e33] border border-[#2a2a2e] rounded-lg text-xs font-bold w-10 text-center transition-colors text-gray-300"
-                        title="Forward 1 second"
-                      >
-                        +1s
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* End Point Slider */}
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-gray-400">Trim End</span>
-                      <span className="text-white font-mono font-bold">
-                        {Math.floor(trimEnd / 60)}:{(Math.floor(trimEnd % 60)).toString().padStart(2, '0')}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button 
-                        type="button" 
-                        onClick={() => setTrimEnd(prev => Math.max(trimStart + 0.5, prev - 1))}
-                        className="p-1 bg-[#232326] hover:bg-[#2e2e33] border border-[#2a2a2e] rounded-lg text-xs font-bold w-10 text-center transition-colors text-gray-300"
-                        title="Decrease 1 second"
-                      >
-                        -1s
-                      </button>
-                      <input 
-                        type="range"
-                        min="0"
-                        max={videoDuration.toString()}
-                        step="0.5"
-                        value={trimEnd}
-                        onChange={(e) => {
-                          const val = parseFloat(e.target.value);
-                          setTrimEnd(Math.max(val, trimStart + 0.5));
-                        }}
-                        className="flex-1 accent-[#5003BD] h-1 bg-[#2a2a2e] rounded-lg cursor-pointer"
-                      />
-                      <button 
-                        type="button" 
-                        onClick={() => setTrimEnd(prev => Math.min(videoDuration, prev + 1))}
-                        className="p-1 bg-[#232326] hover:bg-[#2e2e33] border border-[#2a2a2e] rounded-lg text-xs font-bold w-10 text-center transition-colors text-gray-300"
-                        title="Increase 1 second"
-                      >
-                        +1s
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="text-[11px] text-gray-400 bg-[#121212] px-3.5 py-2.5 rounded-2xl border border-[#2a2a2e] leading-relaxed">
-                  💡 Drag the range handles or click <b className="text-white">-1s / +1s</b> to carve out the perfect highlight from your clip. The player above loops automatically inside your selection bounds.
-                </div>
+                ))}
               </div>
+            )}
+          </div>
+        )}
+
+        {/* Content Details Inputs: Title, Description, Game Category, Tags */}
+        <div className="space-y-4 rounded-3xl bg-[#181818] border border-[#282828] p-5 sm:p-6 shadow-xl">
+          
+          {/* Clip Title Input */}
+          {postType === 'clip' && (
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-300 mb-2">
+                Title *
+              </label>
+              <input
+                type="text"
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                placeholder="e.g. Insane 1v4 Clutch Squad Wipe!"
+                maxLength={100}
+                className="w-full px-4 py-3 rounded-xl bg-[#222222] border border-[#333333] text-white placeholder-gray-500 focus:outline-none focus:border-[#5003BD] text-sm font-medium transition-colors"
+              />
             </div>
           )}
+
+          {/* Description (Caption) Input */}
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-gray-300 mb-2">
+              Description *
+            </label>
+            <textarea
+              value={caption}
+              onChange={e => setCaption(e.target.value)}
+              placeholder="Tell your squad what happened in this post..."
+              rows={3}
+              maxLength={500}
+              className="w-full px-4 py-3 rounded-xl bg-[#222222] border border-[#333333] text-white placeholder-gray-500 focus:outline-none focus:border-[#5003BD] text-sm font-medium resize-none transition-colors"
+            />
+          </div>
+
+          {/* Game Category Picker */}
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-gray-300 mb-2">
+              Game Category
+            </label>
+            <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto pr-1">
+              {AVAILABLE_GAMES.map(game => (
+                <button
+                  key={game}
+                  type="button"
+                  onClick={() => setSelectedGame(game)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                    selectedGame === game
+                      ? 'bg-[#5003BD] border-[#7000FF] text-white shadow-md'
+                      : 'bg-[#222222] border-[#333333] text-gray-400 hover:text-white hover:bg-[#2a2a2a]'
+                  }`}
+                >
+                  {game}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Tags */}
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-gray-300 mb-2">
+              Tags (Up to 5)
+            </label>
+
+            <div className="flex flex-wrap gap-2 mb-3">
+              {tags.map(t => (
+                <span key={t} className="inline-flex items-center gap-1 px-3 py-1 rounded-xl bg-[#5003BD]/40 border border-[#7000FF]/50 text-xs font-bold text-purple-200">
+                  #{t}
+                  <button type="button" onClick={() => handleToggleTag(t)} className="text-gray-300 hover:text-white cursor-pointer">
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+
+            <form onSubmit={handleAddCustomTag} className="flex gap-2 mb-3">
+              <input
+                type="text"
+                value={customTag}
+                onChange={e => setCustomTag(e.target.value)}
+                placeholder="Add tag..."
+                className="flex-1 px-3.5 py-2 rounded-xl bg-[#222222] border border-[#333333] text-white placeholder-gray-500 text-xs focus:outline-none focus:border-[#5003BD]"
+              />
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-xl bg-[#2c2c2c] border border-[#3d3d3d] text-xs font-bold text-gray-200 hover:bg-[#383838] hover:text-white transition-all cursor-pointer"
+              >
+                Add
+              </button>
+            </form>
+
+            <div className="flex flex-wrap gap-1.5">
+              {PRESET_TAGS.map(pt => (
+                <button
+                  key={pt}
+                  type="button"
+                  onClick={() => handleToggleTag(pt)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                    tags.includes(pt)
+                      ? 'bg-[#5003BD] text-white'
+                      : 'bg-[#222222] text-gray-400 hover:text-white hover:bg-[#2c2c2c]'
+                  }`}
+                >
+                  #{pt}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
-        {/* 3. Compression & Transcoding Animation Overlay */}
-        {isProcessingMedia && (
-          <div className="bg-[#1a1a1a] border border-[#5003BD]/30 rounded-3xl p-6 flex flex-col items-center text-center gap-4 animate-in zoom-in-95 duration-300">
-            <div className="relative flex items-center justify-center">
-              <svg className="w-16 h-16 transform -rotate-90">
-                <circle 
-                  cx="32" 
-                  cy="32" 
-                  r="28" 
-                  stroke="#2a2a2e" 
-                  strokeWidth="4" 
-                  fill="transparent" 
-                />
-                <circle 
-                  cx="32" 
-                  cy="32" 
-                  r="28" 
-                  stroke="#5003BD" 
-                  strokeWidth="4" 
-                  fill="transparent" 
-                  strokeDasharray={`${2 * Math.PI * 28}`}
-                  strokeDashoffset={`${2 * Math.PI * 28 * (1 - processingProgress / 100)}`}
-                  className="transition-all duration-300"
-                />
-              </svg>
-              <span className="absolute text-xs font-mono font-bold text-white">{processingProgress}%</span>
+        {/* Upload Progress Bar */}
+        {isUploading && (
+          <div className="p-6 rounded-3xl bg-[#1e1e1e] border border-[#333333] space-y-3 shadow-2xl animate-in fade-in">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-sm text-gray-200">{uploadStatus}</span>
+              <span className="font-mono font-bold text-xs text-purple-400">{uploadProgress}%</span>
             </div>
-            <div className="space-y-1">
-              <h4 className="font-bold text-white">Local Compression Engine</h4>
-              <p className="text-xs text-[#aaaaaa] max-w-sm mx-auto">{processingStatus}</p>
+            <div className="w-full bg-[#121212] rounded-full h-2.5 overflow-hidden border border-[#282828]">
+              <div 
+                className="bg-[#5003BD] h-2.5 rounded-full transition-all duration-300"
+                style={{ width: `${uploadProgress}%` }}
+              />
             </div>
           </div>
         )}
 
-        {/* 5. Inputs (Title & Caption) */}
-        <div className="flex flex-col gap-5 bg-[#1a1a1a] p-5 rounded-3xl border border-[#2a2a2e]">
-          {postType === 'clip' && (
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-[#888888]">HIGHLIGHT TITLE</label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                maxLength={80}
-                placeholder="Name your clip (e.g., Insane Solo Squad Wipe!)"
-                className="w-full bg-[#121212] text-white text-sm font-bold px-4 py-3 rounded-xl border border-[#2a2a2e] focus:outline-none focus:border-[#5003BD] transition-colors"
-              />
-              <span className="text-[10px] text-right text-[#555555] font-mono">{title.length}/80</span>
-            </div>
-          )}
-
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-bold text-[#888888]">{postType === 'clip' ? 'CLIP CAPTION' : 'POST BODY & CAPTION'}</label>
-            <textarea
-              value={caption}
-              onChange={(e) => setCaption(e.target.value)}
-              maxLength={400}
-              rows={4}
-              placeholder={postType === 'clip' ? "Describe this highlight or rotation guide (use #tags)..." : "Write your thoughts or share image details..."}
-              className="w-full bg-[#121212] text-white text-sm px-4 py-3 rounded-xl border border-[#2a2a2e] focus:outline-none focus:border-[#5003BD] transition-colors resize-none leading-relaxed"
-            />
-            <span className="text-[10px] text-right text-[#555555] font-mono">{caption.length}/400</span>
-          </div>
-        </div>
-
-        {/* 6. Tags Area */}
-        <div className="flex flex-col gap-2.5">
-          <label className="text-sm font-bold text-[#aaaaaa]">ADD TAGS (MAX 5)</label>
-          
-          {/* Custom tag form */}
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-sm">#</span>
-              <input 
-                type="text"
-                value={customTag}
-                onChange={(e) => setCustomTag(e.target.value)}
-                placeholder="custom-tag"
-                className="w-full bg-[#1a1a1a] text-white text-xs pl-8 pr-4 py-3 rounded-xl border border-[#2a2a2e] focus:outline-none focus:border-[#5003BD]"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={handleAddCustomTag}
-              className="p-3 bg-[#1a1a1a] hover:bg-[#252528] text-white rounded-xl border border-[#2a2a2e] text-xs font-bold transition-colors"
-            >
-              Add
-            </button>
-          </div>
-
-          {/* Active Tags list */}
-          {tags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-1 bg-[#1a1a1a]/50 p-3 rounded-2xl border border-[#2a2a2e]">
-              {tags.map(tag => (
-                <span 
-                  key={tag}
-                  onClick={() => handleToggleTag(tag)}
-                  className="px-3 py-1.5 bg-[#5003BD]/20 text-[#9e5cff] hover:bg-red-500/20 hover:text-red-300 text-xs font-bold rounded-lg cursor-pointer transition-colors flex items-center gap-1 border border-[#5003BD]/30"
-                >
-                  #{tag} ✕
-                </span>
-              ))}
-            </div>
-          )}
-
-          {/* Quick preset tags */}
-          <div className="flex flex-wrap gap-1.5 mt-1">
-            {PRESET_TAGS.map(tag => {
-              const isActive = tags.includes(tag);
-              return (
-                <button
-                  type="button"
-                  key={tag}
-                  onClick={() => handleToggleTag(tag)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${isActive ? 'bg-[#5003BD] text-white' : 'bg-[#1a1a1a] hover:bg-[#232326] text-[#777777] border border-[#2a2a2e]'}`}
-                >
-                  #{tag}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Dynamic & Highly Visible Post Button at bottom of form */}
-        <div className="mt-6 pt-4 border-t border-[#2a2a2e] flex flex-col gap-3">
+        {/* Bottom Publish Button */}
+        <div className="pt-2 pb-6">
           <button
-            type="submit"
-            disabled={isSubmitting || isProcessingMedia}
-            className="w-full bg-[#5003BD] hover:bg-[#6a0ce6] disabled:bg-[#5003BD]/50 disabled:cursor-not-allowed text-white text-base font-bold py-4 rounded-2xl transition-all duration-300 flex items-center justify-center gap-3 active:scale-[0.98] shadow-lg shadow-[#5003BD]/20 hover:shadow-[#5003BD]/40"
+            type="button"
+            onClick={handleSubmit}
+            disabled={isUploading}
+            className="w-full py-4 px-6 rounded-2xl font-black text-base uppercase tracking-wider bg-[#5003BD] hover:bg-[#6004df] text-white shadow-xl shadow-purple-900/40 hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isSubmitting || isProcessingMedia ? (
+            {isUploading ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin text-white" />
-                <span>Processing & Publishing...</span>
+                <span>Publishing Post...</span>
               </>
             ) : (
               <>
-                <span>Publish Post</span>
                 <Send className="w-5 h-5" />
+                <span>Publish Post</span>
               </>
             )}
           </button>
-
-          {onBack && (
-            <button
-              type="button"
-              onClick={onBack}
-              disabled={isSubmitting || isProcessingMedia}
-              className="w-full bg-[#1a1a1a] hover:bg-[#232326] text-gray-400 hover:text-white border border-[#2a2a2e] text-sm font-bold py-3.5 rounded-2xl transition-all duration-300 flex items-center justify-center gap-2 active:scale-[0.98]"
-            >
-              Cancel & Discard
-            </button>
-          )}
         </div>
-      </form>
+
+      </div>
     </div>
   );
 };
