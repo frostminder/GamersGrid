@@ -6,6 +6,7 @@ import {
 import { auth, db } from '../lib/firebase';
 import { collection, addDoc, doc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { saveVideoToCache, uploadVideoToCloud } from '../lib/videoStorage';
+import { uploadToR2 } from '../lib/uploadMedia';
 import { AVAILABLE_GAMES, getGameMeta } from '../data/gamesAndPlatforms';
 
 interface CreatePostScreenProps {
@@ -187,20 +188,31 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
             console.warn('IndexedDB video cache skipped:', idbErr);
           }
 
-          setProcessingProgress(75);
-          setProcessingStatus('Uploading video stream to cloud...');
+          setProcessingProgress(65);
+          setProcessingStatus('Uploading video clip to cloud storage...');
 
-          // 2. Upload video stream to cloud storage so it can be streamed across all devices
+          // 2. Upload video stream directly to Cloudflare R2
           let finalMediaUrl = '';
           try {
-            finalMediaUrl = await uploadVideoToCloud(videoFile);
-          } catch (uploadErr) {
-            console.warn('Cloud video upload error:', uploadErr);
+            const r2Result = await uploadToR2(videoFile);
+            if (r2Result && r2Result.url) {
+              finalMediaUrl = r2Result.url;
+              if (r2Result.thumbnailUrl) {
+                capturedThumbnail = r2Result.thumbnailUrl;
+              }
+            }
+          } catch (r2Err) {
+            console.warn('R2 direct upload error, trying fallback:', r2Err);
+            try {
+              finalMediaUrl = await uploadVideoToCloud(videoFile);
+            } catch (uploadErr) {
+              console.warn('Cloud video upload error:', uploadErr);
+            }
           }
 
-          // Guaranteed safe URL fallback (avoid saving ephemeral blob: URLs in Firestore)
-          if (!finalMediaUrl || finalMediaUrl.startsWith('blob:')) {
-            finalMediaUrl = indexedDbUri || '/videos/game_clip_action.mp4';
+          // Use the uploaded cloud URL or the local IndexedDB URI for the user's actual video
+          if (!finalMediaUrl) {
+            finalMediaUrl = indexedDbUri || videoPreview || '';
           }
 
           setProcessingProgress(100);
@@ -219,54 +231,37 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
           }, 350);
           
         } else if (postType === 'image' && imageFiles.length > 0) {
-          setProcessingStatus('Compressing images...');
+          setProcessingStatus('Uploading images to Cloudflare R2...');
           
-          const compressedImages: string[] = [];
+          const uploadedImageUrls: string[] = [];
           
-          for (let i = 0; i < imagePreviews.length; i++) {
-            setProcessingProgress(15 + Math.floor((i / imagePreviews.length) * 80));
-            
-            const compressed = await new Promise<string>((res, rej) => {
-              const img = new window.Image();
-              img.src = imagePreviews[i];
-              img.onload = () => {
-                const canvas = document.createElement('canvas');
-                const max_width = 1200;
-                let width = img.width;
-                let height = img.height;
-
-                if (width > max_width) {
-                  height = Math.round((height * max_width) / width);
-                  width = max_width;
-                }
-                canvas.width = width;
-                canvas.height = height;
-
-                const ctx = canvas.getContext('2d');
-                if (ctx) {
-                  ctx.drawImage(img, 0, 0, width, height);
-                  res(canvas.toDataURL('image/jpeg', 0.65));
-                } else {
-                  rej(new Error("Canvas context is null"));
-                }
-              };
-              img.onerror = () => rej(new Error("Image load failed"));
-            });
-            compressedImages.push(compressed);
+          for (let i = 0; i < imageFiles.length; i++) {
+            setProcessingProgress(15 + Math.floor(((i + 1) / imageFiles.length) * 80));
+            try {
+              const r2Res = await uploadToR2(imageFiles[i]);
+              if (r2Res && r2Res.url) {
+                uploadedImageUrls.push(r2Res.url);
+              } else {
+                uploadedImageUrls.push(imagePreviews[i]);
+              }
+            } catch (err) {
+              console.warn('R2 image upload error, using preview:', err);
+              uploadedImageUrls.push(imagePreviews[i]);
+            }
           }
 
           setProcessingProgress(100);
-          setProcessingStatus('Images optimized successfully!');
+          setProcessingStatus('Images uploaded to Cloudflare R2 successfully!');
           
           setTimeout(() => {
             setIsProcessingMedia(false);
             resolve({
-              mediaUrl: compressedImages[0],
-              thumbnailUrl: compressedImages[0],
+              mediaUrl: uploadedImageUrls[0] || '',
+              thumbnailUrl: uploadedImageUrls[0] || '',
               duration: '0:00',
-              imageUrls: compressedImages
+              imageUrls: uploadedImageUrls
             });
-          }, 600);
+          }, 350);
           
         } else {
           setIsProcessingMedia(false);

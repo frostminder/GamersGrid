@@ -41,9 +41,6 @@ export const FeedCard: React.FC<FeedCardProps> = ({
   // Dynamic Video Player State
   const [playableVideoSrc, setPlayableVideoSrc] = useState<string>(() => {
     if (!post.videoUrl) return '';
-    if (post.videoUrl.startsWith('blob:')) {
-      return '/videos/game_clip_action.mp4';
-    }
     return post.videoUrl;
   });
   const [currentTime, setCurrentTime] = useState(0);
@@ -214,15 +211,9 @@ export const FeedCard: React.FC<FeedCardProps> = ({
       videoRef.current.play().then(() => {
         setIsPlaying(true);
       }).catch((err) => {
-        console.warn('Video play recovered with fallback:', err);
-        if (playableVideoSrc !== '/videos/game_clip_action.mp4') {
-          setPlayableVideoSrc('/videos/game_clip_action.mp4');
-          setTimeout(() => {
-            videoRef.current?.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
-          }, 150);
-        } else {
-          setIsPlaying(false);
-        }
+        console.warn('Video play error:', err);
+        setIsPlaying(false);
+        setVideoError(true);
       });
     }
   };
@@ -452,13 +443,8 @@ export const FeedCard: React.FC<FeedCardProps> = ({
                 setCurrentTime(0);
               }}
               onError={() => {
-                if (playableVideoSrc && playableVideoSrc !== '/videos/game_clip_action.mp4') {
-                  setPlayableVideoSrc('/videos/game_clip_action.mp4');
-                  setVideoError(false);
-                } else {
-                  setVideoError(true);
-                  setIsPlaying(false);
-                }
+                setVideoError(true);
+                setIsPlaying(false);
               }}
               className="w-full h-full object-contain"
             />

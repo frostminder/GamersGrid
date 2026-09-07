@@ -41,9 +41,6 @@ export const ClipPlayerModal: React.FC<ClipPlayerModalProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
   const [playableVideoSrc, setPlayableVideoSrc] = useState<string>(() => {
     if (!post.videoUrl) return '';
-    if (post.videoUrl.startsWith('blob:')) {
-      return '/videos/game_clip_action.mp4';
-    }
     return post.videoUrl;
   });
   const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
@@ -134,15 +131,8 @@ export const ClipPlayerModal: React.FC<ClipPlayerModalProps> = ({
         videoRef.current.play().then(() => {
           setIsPlaying(true);
         }).catch((err) => {
-          console.warn('ClipPlayerModal play fallback:', err);
-          if (playableVideoSrc !== '/videos/game_clip_action.mp4') {
-            setPlayableVideoSrc('/videos/game_clip_action.mp4');
-            setTimeout(() => {
-              videoRef.current?.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
-            }, 100);
-          } else {
-            setIsPlaying(false);
-          }
+          console.warn('ClipPlayerModal play error:', err);
+          setIsPlaying(false);
         });
       }
     }
@@ -241,9 +231,7 @@ export const ClipPlayerModal: React.FC<ClipPlayerModalProps> = ({
               playsInline
               muted={isMuted}
               onError={() => {
-                if (playableVideoSrc !== '/videos/game_clip_action.mp4') {
-                  setPlayableVideoSrc('/videos/game_clip_action.mp4');
-                }
+                setIsPlaying(false);
               }}
               className="w-full h-full object-contain max-h-full"
             />

@@ -203,6 +203,10 @@ export const HomeScreen: React.FC = () => {
               docSnap.id.startsWith('post_') ||
               docSnap.id.startsWith('mock_') ||
               data.isMock === true ||
+              data.videoUrl === '/videos/game_clip_action.mp4' ||
+              data.videoUrl === '/videos/sample_clip.mp4' ||
+              data.videoUrl?.includes('game_clip_action') ||
+              data.videoUrl?.includes('sample_clip') ||
               !data.creator ||
               !creatorId ||
               creatorId.startsWith('usr_') ||
@@ -233,6 +237,10 @@ export const HomeScreen: React.FC = () => {
               docSnap.id.startsWith('post_') ||
               docSnap.id.startsWith('mock_') ||
               data.isMock === true ||
+              data.videoUrl === '/videos/game_clip_action.mp4' ||
+              data.videoUrl === '/videos/sample_clip.mp4' ||
+              data.videoUrl?.includes('game_clip_action') ||
+              data.videoUrl?.includes('sample_clip') ||
               !data.creator ||
               !creatorId ||
               creatorId.startsWith('usr_') ||

@@ -1,23 +1,9 @@
 // IndexedDB persistent media engine for local video caching & instant playback
+import { uploadToR2 } from './uploadMedia';
+
 const DB_NAME = 'GamersGridMediaDB';
 const DB_VERSION = 1;
 const STORE_NAME = 'videoClips';
-
-export const FALLBACK_GAMING_VIDEOS = [
-  '/videos/game_clip_action.mp4',
-  '/videos/sample_clip.mp4'
-];
-
-export function getFallbackGamingVideoUrl(seed?: string): string {
-  if (!seed) return FALLBACK_GAMING_VIDEOS[0];
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = (hash << 5) - hash + seed.charCodeAt(i);
-    hash |= 0;
-  }
-  const index = Math.abs(hash) % FALLBACK_GAMING_VIDEOS.length;
-  return FALLBACK_GAMING_VIDEOS[index];
-}
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -92,41 +78,28 @@ export async function getVideoObjectUrl(clipId: string): Promise<string | null> 
 }
 
 /**
- * Uploads a video file to real public cloud storage so it can be streamed across all devices
+ * Uploads a video file to real cloud storage (Cloudflare R2) so it can be streamed across all devices
  */
 export async function uploadVideoToCloud(videoFile: File | Blob): Promise<string> {
-  // Strategy 1: Upload to Litterbox (CORS-friendly, direct public HTTPS mp4 streaming)
+  // Strategy 1: Direct Cloudflare R2 upload using configured credentials
   try {
-    const formData = new FormData();
-    formData.append('reqtype', 'fileupload');
-    formData.append('time', '72h');
-    formData.append('fileToUpload', videoFile, (videoFile as File).name || 'clip.mp4');
+    const fileToUpload = videoFile instanceof File 
+      ? videoFile 
+      : new File([videoFile], `clip_${Date.now()}.mp4`, { type: videoFile.type || 'video/mp4' });
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
-
-    const res = await fetch('https://litterbox.catbox.moe/resources/internals/api.php', {
-      method: 'POST',
-      body: formData,
-      signal: controller.signal
-    });
-    clearTimeout(timeout);
-
-    if (res.ok) {
-      const publicUrl = (await res.text()).trim();
-      if (publicUrl.startsWith('http')) {
-        return publicUrl;
-      }
+    const r2Result = await uploadToR2(fileToUpload);
+    if (r2Result && r2Result.url && r2Result.url.startsWith('http')) {
+      return r2Result.url;
     }
   } catch (err) {
-    console.warn('Direct cloud upload skipped or timed out:', err);
+    console.warn('R2 upload failed, attempting fallback local storage:', err);
   }
 
-  // Strategy 2: Upload to local server endpoint if running Vite dev server
+  // Strategy 2: Upload to local server endpoint if running dev server
   try {
     const fileExt = (videoFile as File).name?.split('.').pop() || 'mp4';
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const timeout = setTimeout(() => controller.abort(), 10000);
 
     const res = await fetch('/api/upload-video', {
       method: 'POST',
@@ -149,16 +122,21 @@ export async function uploadVideoToCloud(videoFile: File | Blob): Promise<string
     console.warn('Local server upload endpoint unavailable:', err);
   }
 
-  // Fallback to built-in high-performance gaming video asset
-  return FALLBACK_GAMING_VIDEOS[0];
+  return '';
 }
 
 /**
- * Resolves any video URL: if it is an indexeddb:// URI or a dead blob:, loads or falls back cleanly
+ * Resolves any video URL: if it is an indexeddb:// URI or a dead blob:, loads cleanly.
+ * Never returns fake sample or stock video links.
  */
 export async function resolvePlayableVideoUrl(videoUrl?: string): Promise<string | null> {
   if (!videoUrl || videoUrl.trim() === '') {
-    return FALLBACK_GAMING_VIDEOS[0];
+    return null;
+  }
+
+  // Strip away any legacy fake or mock video links
+  if (videoUrl.includes('game_clip_action') || videoUrl.includes('sample_clip')) {
+    return null;
   }
 
   // 1. IndexedDB URIs
@@ -167,11 +145,10 @@ export async function resolvePlayableVideoUrl(videoUrl?: string): Promise<string
     if (blobUrl) {
       return blobUrl;
     }
-    // If not found in local DB (e.g. viewed from another device), fall back to gaming clip
-    return getFallbackGamingVideoUrl(videoUrl);
+    return null;
   }
 
-  // 2. In-memory blob: URLs (check if still active or dead from a previous browser session)
+  // 2. In-memory blob: URLs (check if still active)
   if (videoUrl.startsWith('blob:')) {
     try {
       const checkRes = await fetch(videoUrl, { method: 'HEAD' });
@@ -179,9 +156,9 @@ export async function resolvePlayableVideoUrl(videoUrl?: string): Promise<string
         return videoUrl;
       }
     } catch {
-      // Dead blob from previous session or other device
+      // Dead blob
     }
-    return getFallbackGamingVideoUrl(videoUrl);
+    return videoUrl;
   }
 
   return videoUrl;
