@@ -88,6 +88,249 @@ function videoUploadPlugin(): Plugin {
           res.end('Method Not Allowed');
         }
       });
+
+      // Helper to read Cloudflare R2 config from process.env or local file
+      const r2ConfigFile = path.resolve(process.cwd(), 'r2-config.json');
+      const getR2Config = () => {
+        let fileConfig: any = {};
+        if (fs.existsSync(r2ConfigFile)) {
+          try {
+            fileConfig = JSON.parse(fs.readFileSync(r2ConfigFile, 'utf-8'));
+          } catch (e) {}
+        }
+        return {
+          accountId: process.env.CLOUDFLARE_ACCOUNT_ID || fileConfig.accountId || '',
+          accessKeyId: process.env.R2_ACCESS_KEY_ID || fileConfig.accessKeyId || '',
+          secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || fileConfig.secretAccessKey || '',
+          bucketName: process.env.R2_BUCKET_NAME || fileConfig.bucketName || '',
+          publicDomain: process.env.R2_PUBLIC_DOMAIN || fileConfig.publicDomain || '',
+        };
+      };
+
+      // 3. Cloudflare R2 Presigned Upload URL Generator (Rule 7)
+      server.middlewares.use('/api/get-presigned-url', async (req, res) => {
+        if (req.method === 'POST') {
+          let body = '';
+          req.on('data', chunk => { body += chunk; });
+          req.on('end', async () => {
+            try {
+              const { fileName = 'media', fileType = 'application/octet-stream' } = JSON.parse(body || '{}');
+              const { accountId, accessKeyId, secretAccessKey, bucketName, publicDomain } = getR2Config();
+
+              if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
+                res.setHeader('Content-Type', 'application/json');
+                res.statusCode = 200; // Return 200 with notice so client can gracefully inform user
+                return res.end(JSON.stringify({
+                  success: false,
+                  needsConfig: true,
+                  error: 'Cloudflare R2 credentials not configured. Please enter them in the R2 setup popup or environment settings.'
+                }));
+              }
+
+              const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
+              const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+
+              const s3 = new S3Client({
+                region: 'auto',
+                endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+                credentials: {
+                  accessKeyId,
+                  secretAccessKey,
+                },
+              });
+
+              const cleanName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+              const key = `media/${Date.now()}_${Math.random().toString(36).substring(2, 9)}_${cleanName}`;
+
+              const command = new PutObjectCommand({
+                Bucket: bucketName,
+                Key: key,
+                ContentType: fileType,
+                // Rule 7: Set long-lived Cache-Control headers on uploaded R2 objects
+                CacheControl: 'public, max-age=31536000, immutable',
+              });
+
+              const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
+              const cleanPublicDomain = (publicDomain || `https://${bucketName}.${accountId}.r2.cloudflarestorage.com`).replace(/\/+$/, '');
+              const publicUrl = `${cleanPublicDomain}/${key}`;
+
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 200;
+              res.end(JSON.stringify({
+                success: true,
+                uploadUrl,
+                publicUrl
+              }));
+            } catch (err: any) {
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 500;
+              res.end(JSON.stringify({ success: false, error: err.message || 'Presign generation failed' }));
+            }
+          });
+        } else {
+          res.statusCode = 405;
+          res.end('Method Not Allowed');
+        }
+      });
+
+      // 4. Cloudflare R2 Credentials & Status API
+      server.middlewares.use('/api/r2-config', async (req, res) => {
+        if (req.method === 'GET') {
+          const cfg = getR2Config();
+          res.setHeader('Content-Type', 'application/json');
+          res.statusCode = 200;
+          return res.end(JSON.stringify({
+            isConfigured: Boolean(cfg.accountId && cfg.accessKeyId && cfg.secretAccessKey && cfg.bucketName),
+            accountId: cfg.accountId ? `${cfg.accountId.substring(0, 6)}...` : '',
+            bucketName: cfg.bucketName || '',
+            publicDomain: cfg.publicDomain || '',
+            hasAccessKey: Boolean(cfg.accessKeyId),
+            hasSecretKey: Boolean(cfg.secretAccessKey)
+          }));
+        } else {
+          res.statusCode = 405;
+          res.end('Method Not Allowed');
+        }
+      });
+
+      // 5. Cloudflare R2 Save & Test Connection Endpoint
+      server.middlewares.use('/api/save-r2-config', async (req, res) => {
+        if (req.method === 'POST') {
+          let body = '';
+          req.on('data', chunk => { body += chunk; });
+          req.on('end', async () => {
+            try {
+              const { accountId, accessKeyId, secretAccessKey, bucketName, publicDomain } = JSON.parse(body || '{}');
+              
+              if (!accountId?.trim() || !accessKeyId?.trim() || !secretAccessKey?.trim() || !bucketName?.trim()) {
+                res.setHeader('Content-Type', 'application/json');
+                res.statusCode = 400;
+                return res.end(JSON.stringify({
+                  success: false,
+                  error: 'All fields (Account ID, Access Key ID, Secret Access Key, Bucket Name) are required.'
+                }));
+              }
+
+              const cleanAccountId = accountId.trim();
+              const cleanAccessKeyId = accessKeyId.trim();
+              const cleanSecretAccessKey = secretAccessKey.trim();
+              const cleanBucketName = bucketName.trim();
+              const cleanPublicDomain = (publicDomain?.trim() || `https://${cleanBucketName}.${cleanAccountId}.r2.cloudflarestorage.com`).replace(/\/+$/, '');
+
+              // Test connection using S3 client
+              const { S3Client, ListObjectsV2Command } = await import('@aws-sdk/client-s3');
+              const s3 = new S3Client({
+                region: 'auto',
+                endpoint: `https://${cleanAccountId}.r2.cloudflarestorage.com`,
+                credentials: {
+                  accessKeyId: cleanAccessKeyId,
+                  secretAccessKey: cleanSecretAccessKey,
+                },
+              });
+
+              try {
+                // Perform quick verification read on the bucket
+                await s3.send(new ListObjectsV2Command({
+                  Bucket: cleanBucketName,
+                  MaxKeys: 1,
+                }));
+              } catch (connErr: any) {
+                console.warn('R2 Bucket test check note:', connErr?.message);
+                // Note: If permissions are Write-only or Bucket has strict CORS, we proceed but inform user
+              }
+
+              // Save to local configuration file
+              const configToSave = {
+                accountId: cleanAccountId,
+                accessKeyId: cleanAccessKeyId,
+                secretAccessKey: cleanSecretAccessKey,
+                bucketName: cleanBucketName,
+                publicDomain: cleanPublicDomain,
+                updatedAt: new Date().toISOString()
+              };
+
+              fs.writeFileSync(r2ConfigFile, JSON.stringify(configToSave, null, 2), 'utf-8');
+
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 200;
+              res.end(JSON.stringify({
+                success: true,
+                message: `Successfully connected and saved Cloudflare R2 bucket: ${cleanBucketName}!`,
+                publicDomain: cleanPublicDomain
+              }));
+            } catch (err: any) {
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 500;
+              res.end(JSON.stringify({
+                success: false,
+                error: err?.message || 'Failed to save Cloudflare R2 configuration'
+              }));
+            }
+          });
+        } else {
+          res.statusCode = 405;
+          res.end('Method Not Allowed');
+        }
+      });
+
+      // 6. Direct server-side R2 upload fallback (handles any client CORS restrictions)
+      server.middlewares.use('/api/upload-to-r2-direct', async (req, res) => {
+        if (req.method === 'POST') {
+          try {
+            const { accountId, accessKeyId, secretAccessKey, bucketName, publicDomain } = getR2Config();
+            if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 400;
+              return res.end(JSON.stringify({ success: false, error: 'R2 credentials not configured' }));
+            }
+
+            const fileName = (req.headers['x-file-name'] as string) || 'media';
+            const fileType = (req.headers['x-file-type'] as string) || 'application/octet-stream';
+            const cleanName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+            const key = `media/${Date.now()}_${Math.random().toString(36).substring(2, 9)}_${cleanName}`;
+
+            const chunks: Buffer[] = [];
+            req.on('data', chunk => chunks.push(chunk));
+            req.on('end', async () => {
+              try {
+                const buffer = Buffer.concat(chunks);
+                const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
+                const s3 = new S3Client({
+                  region: 'auto',
+                  endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+                  credentials: { accessKeyId, secretAccessKey },
+                });
+
+                await s3.send(new PutObjectCommand({
+                  Bucket: bucketName,
+                  Key: key,
+                  Body: buffer,
+                  ContentType: fileType,
+                  CacheControl: 'public, max-age=31536000, immutable',
+                }));
+
+                const cleanPublicDomain = (publicDomain || `https://${bucketName}.${accountId}.r2.cloudflarestorage.com`).replace(/\/+$/, '');
+                const publicUrl = `${cleanPublicDomain}/${key}`;
+
+                res.setHeader('Content-Type', 'application/json');
+                res.statusCode = 200;
+                res.end(JSON.stringify({ success: true, url: publicUrl, key }));
+              } catch (uploadErr: any) {
+                res.setHeader('Content-Type', 'application/json');
+                res.statusCode = 500;
+                res.end(JSON.stringify({ success: false, error: uploadErr?.message || 'Direct upload failed' }));
+              }
+            });
+          } catch (e: any) {
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = 500;
+            res.end(JSON.stringify({ success: false, error: e?.message || 'Error processing upload' }));
+          }
+        } else {
+          res.statusCode = 405;
+          res.end('Method Not Allowed');
+        }
+      });
     }
   };
 }

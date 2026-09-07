@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Wifi, Users, LayoutDashboard, Settings, Bell, Home, Trophy, PlaySquare, User, Search, Plus, MessageSquare, Flame } from 'lucide-react';
+import { ShieldCheck, Wifi, Users, LayoutDashboard, Settings, Bell, Home, Trophy, PlaySquare, User, Search, Plus, MessageSquare, Flame, Cloud } from 'lucide-react';
 import { GamersGridLogo } from '../components/GamersGridLogo';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { auth, db } from '../lib/firebase';
@@ -9,12 +9,13 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ProfileTab } from '../components/ProfileTab';
 import { TournamentHub } from '../components/TournamentHub';
 import { SettingsMockup } from '../components/MockupScreens';
-import { MessagesScreen } from '../components/MessagesScreen';
+import { GamerMessagesContainer } from '../components/GamerMessagesContainer';
 import { SearchScreen } from '../components/SearchScreen';
 import { NotificationsScreen } from '../components/NotificationsScreen';
 import { CreatePostScreen } from '../components/CreatePostScreen';
 import { FeedCard } from '../components/FeedCard';
 import { ClipPlayerModal } from '../components/ClipPlayerModal';
+import { R2ConfigModal } from '../components/R2ConfigModal';
 import { startPresenceTracking } from '../lib/presenceService';
 import { followUser, unfollowUser } from '../lib/userService';
 import { MOCK_TOURNAMENTS, INITIAL_WALLET, INITIAL_POSTS, Post } from '../types/mockData';
@@ -29,6 +30,7 @@ export const HomeScreen: React.FC = () => {
   const [dismissInstall, setDismissInstall] = useState(false);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState<number>(0);
+  const [showR2Modal, setShowR2Modal] = useState(false);
   const [postsList, setPostsList] = useState<any[]>([]);
   const [loadingPosts, setLoadingPosts] = useState<boolean>(true);
   const [feedTab, setFeedTab] = useState<'foryou' | 'following'>('foryou');
@@ -56,6 +58,18 @@ export const HomeScreen: React.FC = () => {
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   }, [activeTab]);
+
+  // Prompt user with Cloudflare R2 setup popup if not configured yet
+  useEffect(() => {
+    fetch('/api/r2-config')
+      .then(res => res.json())
+      .then(data => {
+        if (!data.isConfigured) {
+          setShowR2Modal(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     let unsubscribeSnapshot: () => void;
@@ -98,16 +112,16 @@ export const HomeScreen: React.FC = () => {
           console.error('Error listening to notifications count:', err);
         });
 
-        // Real-time unread messages listener
+        // Real-time unread messages listener (Rule 2 & 3: conversations collection)
         const chatsQ = query(
-          collection(db, 'chats'),
+          collection(db, 'conversations'),
           where('participants', 'array-contains', currentUser.uid)
         );
         unsubChats = onSnapshot(chatsQ, (snap) => {
           let total = 0;
           snap.forEach((docSnap) => {
             const data = docSnap.data();
-            const count = data.unreadCount?.[currentUser.uid];
+            const count = data.unreadCounts?.[currentUser.uid] ?? data.unreadCount?.[currentUser.uid];
             if (typeof count === 'number' && count > 0) {
               total += count;
             } else if (data.lastMessageSenderId && data.lastMessageSenderId !== currentUser.uid && data.read === false) {
@@ -419,7 +433,18 @@ export const HomeScreen: React.FC = () => {
             <span className="font-mono font-bold tracking-widest text-white hidden sm:block">GAMERS GRID</span>
           </div>
           
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            {/* Cloudflare R2 Setup Button */}
+            <button
+              onClick={() => setShowR2Modal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1e1e24] hover:bg-[#282830] text-zinc-300 hover:text-white text-xs font-semibold border border-[#32323a] transition-all shadow-sm active:scale-95"
+              title="Configure Cloudflare R2 Storage"
+              id="btn-topbar-r2-setup"
+            >
+              <Cloud className="w-3.5 h-3.5 text-purple-400" />
+              <span className="hidden sm:inline">R2 Setup</span>
+            </button>
+
             {/* Notification Bell */}
             <button 
               onClick={() => handleTabChange('notifications')}
@@ -548,7 +573,7 @@ export const HomeScreen: React.FC = () => {
         )}
 
         {activeTab === 'messages' && (
-          <MessagesScreen onChatActiveChange={(active) => setIsChatActive(active)} />
+          <GamerMessagesContainer onChatActiveChange={(active) => setIsChatActive(active)} />
         )}
 
         {activeTab === 'profile' && (
@@ -688,6 +713,12 @@ export const HomeScreen: React.FC = () => {
           })}
         </nav>
       )}
+
+      {/* R2 Cloudflare Storage Config Modal */}
+      <R2ConfigModal 
+        isOpen={showR2Modal} 
+        onClose={() => setShowR2Modal(false)} 
+      />
 
       {/* iOS Guide Modal */}
       {showIOSGuide && (

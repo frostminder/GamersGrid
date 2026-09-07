@@ -23,11 +23,13 @@ import {
   Info,
   Trash2,
   Camera,
-  Tv
+  Tv,
+  Cloud
 } from 'lucide-react';
 import { auth, db } from '../lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { ALL_PLATFORMS, AVAILABLE_GAMES } from '../data/gamesAndPlatforms';
+import { R2ConfigModal } from './R2ConfigModal';
 
 export const SearchMockup = () => (
   <div className="flex-1 w-full flex flex-col items-center justify-center min-h-[500px] animate-in fade-in">
@@ -119,6 +121,7 @@ export const SettingsMockup = ({
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [showR2Modal, setShowR2Modal] = useState(false);
 
   // --- WWW SEARCH SUGGESTIONS STATE ---
   const [searchQuery, setSearchQuery] = useState('');
@@ -485,6 +488,25 @@ export const SettingsMockup = ({
                   <div className="flex-1">
                     <h3 className="text-sm font-semibold text-white">App Preferences</h3>
                     <p className="text-xs text-zinc-500">Language translation settings, navigation audio, FPS overlay, clear cache</p>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-zinc-600" />
+                </div>
+
+                {/* Option 5: Cloudflare R2 Media Storage */}
+                <div 
+                  onClick={() => setShowR2Modal(true)}
+                  className="w-full px-4 py-3 flex items-center gap-4 hover:bg-zinc-900/40 transition-all cursor-pointer"
+                  id="btn-settings-r2-setup"
+                >
+                  <div className="w-10 h-10 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center shrink-0">
+                    <Cloud className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-semibold text-white">Cloudflare R2 Storage</h3>
+                      <span className="text-[9px] font-mono font-bold bg-blue-500/20 text-blue-300 px-1.5 py-0.5 rounded border border-blue-500/30">CDN</span>
+                    </div>
+                    <p className="text-xs text-zinc-500">Configure Account ID, Bucket Name, and R2 Access Keys</p>
                   </div>
                   <ChevronRight className="w-4 h-4 text-zinc-600" />
                 </div>
@@ -1142,6 +1164,11 @@ export const SettingsMockup = ({
 
         </div>
       )}
+
+      <R2ConfigModal
+        isOpen={showR2Modal}
+        onClose={() => setShowR2Modal(false)}
+      />
 
     </div>
   );
