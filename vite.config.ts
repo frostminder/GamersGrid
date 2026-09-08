@@ -6,16 +6,14 @@ import { defineConfig, Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 function videoUploadPlugin(): Plugin {
-  return {
-    name: 'video-upload-plugin',
-    configureServer(server) {
+  const setupMiddlewares = (server: any) => {
       const uploadDir = path.resolve(process.cwd(), 'public', 'uploads');
       if (!fs.existsSync(uploadDir)) {
         fs.mkdirSync(uploadDir, { recursive: true });
       }
 
       // 1. Streaming video delivery with HTTP 206 Partial Content range support
-      server.middlewares.use('/uploads', (req, res, next) => {
+      server.middlewares.use('/uploads', (req: any, res: any, next: any) => {
         const parsedUrl = req.url ? req.url.split('?')[0] : '';
         const cleanName = path.basename(parsedUrl);
         const filePath = path.join(uploadDir, cleanName);
@@ -54,7 +52,7 @@ function videoUploadPlugin(): Plugin {
       });
 
       // 2. Video Upload handler
-      server.middlewares.use('/api/upload-video', (req, res) => {
+      server.middlewares.use('/api/upload-video', (req: any, res: any) => {
         if (req.method === 'POST') {
           try {
             const ext = (req.headers['x-file-ext'] as string) || 'mp4';
@@ -73,7 +71,7 @@ function videoUploadPlugin(): Plugin {
               }));
             });
 
-            fileStream.on('error', (err) => {
+            fileStream.on('error', (err: any) => {
               res.setHeader('Content-Type', 'application/json');
               res.statusCode = 500;
               res.end(JSON.stringify({ success: false, error: err.message }));
@@ -107,11 +105,11 @@ function videoUploadPlugin(): Plugin {
         };
       };
 
-      // 3. Cloudflare R2 Presigned Upload URL Generator (Rule 7)
-      server.middlewares.use('/api/get-presigned-url', async (req, res) => {
+      // 3. Cloudflare R2 Presigned Upload URL Generator
+      server.middlewares.use('/api/get-presigned-url', async (req: any, res: any) => {
         if (req.method === 'POST') {
           let body = '';
-          req.on('data', chunk => { body += chunk; });
+          req.on('data', (chunk: any) => { body += chunk; });
           req.on('end', async () => {
             try {
               const { fileName = 'media', fileType = 'application/octet-stream' } = JSON.parse(body || '{}');
@@ -119,11 +117,11 @@ function videoUploadPlugin(): Plugin {
 
               if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
                 res.setHeader('Content-Type', 'application/json');
-                res.statusCode = 200; // Return 200 with notice so client can gracefully inform user
+                res.statusCode = 200;
                 return res.end(JSON.stringify({
                   success: false,
                   needsConfig: true,
-                  error: 'Cloudflare R2 credentials not configured. Please enter them in the R2 setup popup or environment settings.'
+                  error: 'Cloudflare R2 credentials not configured.'
                 }));
               }
 
@@ -146,7 +144,6 @@ function videoUploadPlugin(): Plugin {
                 Bucket: bucketName,
                 Key: key,
                 ContentType: fileType,
-                // Rule 7: Set long-lived Cache-Control headers on uploaded R2 objects
                 CacheControl: 'public, max-age=31536000, immutable',
               });
 
@@ -174,7 +171,7 @@ function videoUploadPlugin(): Plugin {
       });
 
       // 4. Cloudflare R2 Credentials & Status API
-      server.middlewares.use('/api/r2-config', async (req, res) => {
+      server.middlewares.use('/api/r2-config', async (req: any, res: any) => {
         if (req.method === 'GET') {
           const cfg = getR2Config();
           res.setHeader('Content-Type', 'application/json');
@@ -194,10 +191,10 @@ function videoUploadPlugin(): Plugin {
       });
 
       // 5. Cloudflare R2 Save & Test Connection Endpoint
-      server.middlewares.use('/api/save-r2-config', async (req, res) => {
+      server.middlewares.use('/api/save-r2-config', async (req: any, res: any) => {
         if (req.method === 'POST') {
           let body = '';
-          req.on('data', chunk => { body += chunk; });
+          req.on('data', (chunk: any) => { body += chunk; });
           req.on('end', async () => {
             try {
               const { accountId, accessKeyId, secretAccessKey, bucketName, publicDomain } = JSON.parse(body || '{}');
@@ -207,7 +204,7 @@ function videoUploadPlugin(): Plugin {
                 res.statusCode = 400;
                 return res.end(JSON.stringify({
                   success: false,
-                  error: 'All fields (Account ID, Access Key ID, Secret Access Key, Bucket Name) are required.'
+                  error: 'All fields are required.'
                 }));
               }
 
@@ -217,7 +214,6 @@ function videoUploadPlugin(): Plugin {
               const cleanBucketName = bucketName.trim();
               const cleanPublicDomain = (publicDomain?.trim() || `https://${cleanBucketName}.${cleanAccountId}.r2.cloudflarestorage.com`).replace(/\/+$/, '');
 
-              // Test connection using S3 client
               const { S3Client, ListObjectsV2Command } = await import('@aws-sdk/client-s3');
               const s3 = new S3Client({
                 region: 'auto',
@@ -229,17 +225,14 @@ function videoUploadPlugin(): Plugin {
               });
 
               try {
-                // Perform quick verification read on the bucket
                 await s3.send(new ListObjectsV2Command({
                   Bucket: cleanBucketName,
                   MaxKeys: 1,
                 }));
               } catch (connErr: any) {
-                console.warn('R2 Bucket test check note:', connErr?.message);
-                // Note: If permissions are Write-only or Bucket has strict CORS, we proceed but inform user
+                console.warn('R2 Bucket check note:', connErr?.message);
               }
 
-              // Save to local configuration file
               const configToSave = {
                 accountId: cleanAccountId,
                 accessKeyId: cleanAccessKeyId,
@@ -255,7 +248,7 @@ function videoUploadPlugin(): Plugin {
               res.statusCode = 200;
               res.end(JSON.stringify({
                 success: true,
-                message: `Successfully connected and saved Cloudflare R2 bucket: ${cleanBucketName}!`,
+                message: `Successfully connected Cloudflare R2 bucket: ${cleanBucketName}!`,
                 publicDomain: cleanPublicDomain
               }));
             } catch (err: any) {
@@ -274,7 +267,7 @@ function videoUploadPlugin(): Plugin {
       });
 
       // 6. Direct server-side R2 streaming upload endpoint
-      server.middlewares.use('/api/upload-to-r2-direct', async (req, res) => {
+      server.middlewares.use('/api/upload-to-r2-direct', async (req: any, res: any) => {
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', '*');
@@ -341,8 +334,17 @@ function videoUploadPlugin(): Plugin {
           res.end('Method Not Allowed');
         }
       });
-    }
-  };
+      };
+
+      return {
+        name: 'video-upload-plugin',
+        configureServer(server: any) {
+          setupMiddlewares(server);
+        },
+        configurePreviewServer(server: any) {
+          setupMiddlewares(server);
+        }
+      };
 }
 
 export default defineConfig(() => {

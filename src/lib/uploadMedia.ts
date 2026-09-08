@@ -152,6 +152,53 @@ export const uploadToR2 = async (file: File): Promise<{ url: string, thumbnailUr
     console.warn('Presigned PUT upload to R2 error:', err?.message);
   }
 
+  // Tertiary Path: App Server Media Handler (/api/upload-video)
+  // Saves file to public server storage so ANY device (Device B, Mobile, Desktop) can stream it
+  try {
+    const fileExt = file.name ? file.name.split('.').pop() || 'mp4' : 'mp4';
+    const serverResp = await fetch('/api/upload-video', {
+      method: 'POST',
+      headers: {
+        'x-file-ext': fileExt,
+        'Content-Type': file.type || 'video/mp4'
+      },
+      body: file
+    });
+
+    if (serverResp.ok) {
+      const serverData = await serverResp.json().catch(() => ({}));
+      if (serverData && serverData.url) {
+        return {
+          url: serverData.url,
+          thumbnailUrl
+        };
+      }
+    }
+  } catch (serverErr: any) {
+    console.warn('Server upload endpoint error:', serverErr?.message);
+  }
+
+  // Quaternary Path: Base64 Data URL for files (< 12MB) — universal cross-device playback
+  try {
+    if (file.size < 12 * 1024 * 1024) {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      if (dataUrl) {
+        return {
+          url: dataUrl,
+          thumbnailUrl
+        };
+      }
+    }
+  } catch (base64Err) {
+    console.warn('Data URL conversion error:', base64Err);
+  }
+
   // Fallback Path: If cloud endpoints are unavailable or unconfigured, save persistently to IndexedDB or Data URL
   try {
     if (file.type.startsWith('video/')) {
