@@ -433,14 +433,14 @@ export const FeedCard: React.FC<FeedCardProps> = ({
         </div>
       </div>
 
-      {/* 2. Media / Video Container (16:10 ratio) */}
-      <div 
-        className="relative w-full aspect-[16/10] bg-[#0c0c0e] overflow-hidden group/video select-none cursor-pointer"
-        onClick={post.videoUrl ? handleTogglePlay : () => onOpenClipModal(post)}
-        onDoubleClick={handleDoubleTapLike}
-      >
-        {/* Actual Video Player */}
-        {post.videoUrl ? (
+      {/* 2. Media / Video / Poll Container */}
+      {post.type === 'clip' ? (
+        <div 
+          className="relative w-full aspect-[16/10] bg-[#0c0c0e] overflow-hidden group/video select-none cursor-pointer"
+          onClick={handleTogglePlay}
+          onDoubleClick={handleDoubleTapLike}
+        >
+          {/* Actual Video Player */}
           <div className="w-full h-full relative flex items-center justify-center bg-black">
             <video
               ref={videoRef}
@@ -533,109 +533,152 @@ export const FeedCard: React.FC<FeedCardProps> = ({
               </div>
             </div>
           </div>
-        ) : post.imageUrls && post.imageUrls.length > 0 ? (
-          /* Multi-image carousel with anchored dots, active indicator, and smooth navigation */
-          <div className="w-full h-full relative group/slider">
-            <div 
-              ref={imageSliderRef}
-              onScroll={handleImageScroll}
-              className="w-full h-full flex overflow-x-auto snap-x snap-mandatory scrollbar-hide"
-            >
-              {post.imageUrls.map((imgUrl, idx) => (
-                <img
-                  key={idx}
-                  src={imgUrl}
-                  alt={post.title || post.caption || `Photo ${idx + 1}`}
-                  className="w-full h-full object-cover flex-shrink-0 snap-center"
-                />
-              ))}
-            </div>
-
-            {/* Left and Right navigation buttons */}
-            {post.imageUrls.length > 1 && (
-              <>
-                {activeImageIndex > 0 && (
-                  <button
-                    type="button"
-                    onClick={handlePrevImage}
-                    className="absolute left-2.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/65 hover:bg-black/90 text-white flex items-center justify-center backdrop-blur-md opacity-0 group-hover/slider:opacity-100 transition-opacity z-20 shadow-md"
-                    title="Previous image"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                )}
-                {activeImageIndex < post.imageUrls.length - 1 && (
-                  <button
-                    type="button"
-                    onClick={handleNextImage}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/65 hover:bg-black/90 text-white flex items-center justify-center backdrop-blur-md opacity-0 group-hover/slider:opacity-100 transition-opacity z-20 shadow-md"
-                    title="Next image"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                )}
-              </>
-            )}
-
-            {/* Fixed Pagination Dots - Anchored to media frame so they NEVER vanish when swiping */}
-            {post.imageUrls.length > 1 && (
-              <div 
-                className="absolute bottom-3 left-0 right-0 flex justify-center items-center gap-1.5 z-20 pointer-events-auto"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {post.imageUrls.map((_, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={(e) => handleSelectImageDot(idx, e)}
-                    className={`transition-all duration-200 rounded-full ${
-                      idx === activeImageIndex 
-                        ? 'w-5 h-1.5 bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]' 
-                        : 'w-1.5 h-1.5 bg-white/40 hover:bg-white/70'
-                    }`}
-                    aria-label={`Go to image ${idx + 1}`}
-                  />
-                ))}
-              </div>
-            )}
-
-            {/* Image index counter badge */}
-            {post.imageUrls.length > 1 && (
-              <div className="absolute top-3 right-3 bg-black/75 backdrop-blur-md text-white text-[10px] font-bold font-mono px-2 py-0.5 rounded-full border border-white/10 z-20 pointer-events-none">
-                {activeImageIndex + 1}/{post.imageUrls.length}
-              </div>
-            )}
-          </div>
-        ) : (
-          /* Thumbnail / Single Image */
-          <img
-            src={post.thumbnailUrl || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&auto=format&fit=crop&q=80'}
-            alt={post.title || post.caption}
-            className="w-full h-full object-cover"
-          />
-        )}
-
-        {/* Double-tap Heart Animation */}
-        {showHeartAnim && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
-            <Heart className="w-20 h-20 text-red-500 fill-red-500 animate-ping duration-500 drop-shadow-2xl" />
-          </div>
-        )}
-
-        {/* Top Badges: Live Time / Duration & Game Category */}
-        <div className="absolute top-3 left-3 flex items-center gap-1.5 z-20 pointer-events-none">
-          {post.videoUrl && (
+          
+          {/* Top Badges: Live Time / Duration & Game Category */}
+          <div className="absolute top-3 left-3 flex items-center gap-1.5 z-20 pointer-events-none">
             <span className="bg-black/80 backdrop-blur-md text-white font-mono text-[11px] font-bold px-2 py-0.5 rounded-md border border-white/10 shadow-sm">
               {formatTime(currentTime)} / {formatTime(duration || parseDurationString(post.duration) || 15)}
             </span>
+            {post.gameCategory && (
+              <span className="bg-[#5003BD]/90 text-white text-[10px] font-semibold px-2 py-0.5 rounded-md shadow-sm">
+                {post.gameCategory}
+              </span>
+            )}
+          </div>
+        </div>
+      ) : post.type === 'image' || (!post.type && post.imageUrls) ? (
+        <div 
+          className="relative w-full aspect-[16/10] bg-[#0c0c0e] overflow-hidden group/video select-none cursor-pointer"
+          onClick={() => onOpenClipModal(post)}
+          onDoubleClick={handleDoubleTapLike}
+        >
+          {post.imageUrls && post.imageUrls.length > 0 ? (
+            /* Multi-image carousel with anchored dots, active indicator, and smooth navigation */
+            <div className="w-full h-full relative group/slider">
+              <div 
+                ref={imageSliderRef}
+                onScroll={handleImageScroll}
+                className="w-full h-full flex overflow-x-auto snap-x snap-mandatory scrollbar-hide"
+              >
+                {post.imageUrls.map((imgUrl, idx) => (
+                  <img
+                    key={idx}
+                    src={imgUrl}
+                    alt={post.title || post.caption || `Photo ${idx + 1}`}
+                    className="w-full h-full object-cover flex-shrink-0 snap-center"
+                  />
+                ))}
+              </div>
+
+              {/* Left and Right navigation buttons */}
+              {post.imageUrls.length > 1 && (
+                <>
+                  {activeImageIndex > 0 && (
+                    <button
+                      type="button"
+                      onClick={handlePrevImage}
+                      className="absolute left-2.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/65 hover:bg-black/90 text-white flex items-center justify-center backdrop-blur-md opacity-0 group-hover/slider:opacity-100 transition-opacity z-20 shadow-md"
+                      title="Previous image"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                  )}
+                  {activeImageIndex < post.imageUrls.length - 1 && (
+                    <button
+                      type="button"
+                      onClick={handleNextImage}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/65 hover:bg-black/90 text-white flex items-center justify-center backdrop-blur-md opacity-0 group-hover/slider:opacity-100 transition-opacity z-20 shadow-md"
+                      title="Next image"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  )}
+                </>
+              )}
+
+              {/* Fixed Pagination Dots */}
+              {post.imageUrls.length > 1 && (
+                <div 
+                  className="absolute bottom-3 left-0 right-0 flex justify-center items-center gap-1.5 z-20 pointer-events-auto"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {post.imageUrls.map((_, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={(e) => handleSelectImageDot(idx, e)}
+                      className={`transition-all duration-200 rounded-full ${
+                        idx === activeImageIndex 
+                          ? 'w-5 h-1.5 bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]' 
+                          : 'w-1.5 h-1.5 bg-white/40 hover:bg-white/70'
+                      }`}
+                      aria-label={`Go to image ${idx + 1}`}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Image index counter badge */}
+              {post.imageUrls.length > 1 && (
+                <div className="absolute top-3 right-3 bg-black/75 backdrop-blur-md text-white text-[10px] font-bold font-mono px-2 py-0.5 rounded-full border border-white/10 z-20 pointer-events-none">
+                  {activeImageIndex + 1}/{post.imageUrls.length}
+                </div>
+              )}
+            </div>
+          ) : (
+            <img
+              src={post.thumbnailUrl || 'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=800&auto=format&fit=crop&q=80'}
+              alt={post.title || post.caption}
+              className="w-full h-full object-cover"
+            />
           )}
-          {post.gameCategory && (
-            <span className="bg-[#5003BD]/90 text-white text-[10px] font-semibold px-2 py-0.5 rounded-md shadow-sm">
-              {post.gameCategory}
-            </span>
+          {showHeartAnim && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
+              <Heart className="w-20 h-20 text-red-500 fill-red-500 animate-ping duration-500 drop-shadow-2xl" />
+            </div>
           )}
         </div>
-      </div>
+      ) : post.type === 'poll' ? (
+        <div className="w-full bg-[#151515] p-5 border-y border-[#2a2a2a]">
+          <h3 className="text-lg font-bold text-white mb-4">{post.pollQuestion || post.caption}</h3>
+          <div className="space-y-3">
+            {post.pollOptions?.map((opt, i) => {
+              // Simulated voting state (we don't have a subcollection for it yet in this UI snapshot, so we'll mock it or just show bars if expired)
+              const isExpired = post.pollExpiry && Date.now() > post.pollExpiry;
+              const totalVotes = post.pollOptions?.reduce((acc: number, o: any) => acc + (o.votes || 0), 0) || 0;
+              const pct = totalVotes > 0 ? ((opt.votes || 0) / totalVotes) * 100 : 0;
+              
+              return (
+                <button
+                  key={i}
+                  disabled={!!isExpired}
+                  className={`w-full relative overflow-hidden rounded-xl border ${
+                    isExpired ? 'border-[#333] cursor-default' : 'border-[#444] hover:border-[#5003BD] cursor-pointer'
+                  } bg-[#1f1f1f] transition-colors`}
+                  onClick={() => {/* handle vote */}}
+                >
+                  {(isExpired || totalVotes > 0) && (
+                    <div 
+                      className="absolute top-0 left-0 bottom-0 bg-[#5003BD]/40 transition-all duration-500"
+                      style={{ width: `${pct}%` }}
+                    />
+                  )}
+                  <div className="relative z-10 px-4 py-3 flex justify-between items-center text-sm font-medium text-gray-200">
+                    <span>{opt.text}</span>
+                    {(isExpired || totalVotes > 0) && (
+                      <span className="text-xs text-gray-400">{pct.toFixed(0)}%</span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-3 text-xs text-gray-500">
+            {post.pollOptions?.reduce((acc: number, o: any) => acc + (o.votes || 0), 0)} votes
+            {post.pollExpiry && Date.now() > post.pollExpiry ? ' • Final Results' : ''}
+          </div>
+        </div>
+      ) : null}
 
       {/* 3. Title & Caption Body (Tapping opens Fullscreen Modal) */}
       <div 

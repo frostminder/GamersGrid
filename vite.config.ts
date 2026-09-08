@@ -116,6 +116,7 @@ function videoUploadPlugin(): Plugin {
               const { accountId, accessKeyId, secretAccessKey, bucketName, publicDomain } = getR2Config();
 
               if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
+                console.error('[API] /api/get-presigned-url failed: Missing R2 credentials (accountId, accessKeyId, secretAccessKey, or bucketName not set)');
                 res.setHeader('Content-Type', 'application/json');
                 res.statusCode = 200;
                 return res.end(JSON.stringify({
@@ -159,6 +160,7 @@ function videoUploadPlugin(): Plugin {
                 publicUrl
               }));
             } catch (err: any) {
+              console.error('[API] /api/get-presigned-url error:', err);
               res.setHeader('Content-Type', 'application/json');
               res.statusCode = 500;
               res.end(JSON.stringify({ success: false, error: err.message || 'Presign generation failed' }));
@@ -266,6 +268,58 @@ function videoUploadPlugin(): Plugin {
         }
       });
 
+      // 5.5 Content Moderation API
+      server.middlewares.use('/api/moderate', async (req: any, res: any) => {
+        if (req.method === 'POST') {
+          let body = '';
+          req.on('data', (chunk: any) => { body += chunk; });
+          req.on('end', async () => {
+            try {
+              const { text } = JSON.parse(body || '{}');
+              if (!text?.trim()) {
+                res.setHeader('Content-Type', 'application/json');
+                res.statusCode = 200;
+                return res.end(JSON.stringify({ success: true, status: 'approved' }));
+              }
+              
+              if (!process.env.GEMINI_API_KEY) {
+                console.warn('[API] /api/moderate: No GEMINI_API_KEY found, skipping moderation');
+                res.setHeader('Content-Type', 'application/json');
+                res.statusCode = 200;
+                return res.end(JSON.stringify({ success: true, status: 'approved' }));
+              }
+
+              const { GoogleGenAI } = await import('@google/genai');
+              const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+              
+              const prompt = `Analyze the following text from a gaming social network post. Does it contain extremely severe hate speech, explicit illegal content, or extremely graphic violence not related to video games? Reply only with "APPROVED" or "REJECTED".
+Text to analyze: "${text}"`;
+
+              const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: prompt,
+              });
+
+              const resultText = response.text?.trim().toUpperCase() || 'APPROVED';
+              const status = resultText.includes('REJECTED') ? 'rejected' : 'approved';
+              
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true, status }));
+            } catch (err: any) {
+              console.error('[API] /api/moderate error:', err);
+              // Fail open to avoid blocking user posts if moderation API fails
+              res.setHeader('Content-Type', 'application/json');
+              res.statusCode = 200;
+              res.end(JSON.stringify({ success: true, status: 'approved' }));
+            }
+          });
+        } else {
+          res.statusCode = 405;
+          res.end('Method Not Allowed');
+        }
+      });
+
       // 6. Direct server-side R2 streaming upload endpoint
       server.middlewares.use('/api/upload-to-r2-direct', async (req: any, res: any) => {
         res.setHeader('Access-Control-Allow-Origin', '*');
@@ -281,6 +335,7 @@ function videoUploadPlugin(): Plugin {
           try {
             const { accountId, accessKeyId, secretAccessKey, bucketName, publicDomain } = getR2Config();
             if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
+              console.error('[API] /api/upload-to-r2-direct failed: Missing R2 credentials');
               res.setHeader('Content-Type', 'application/json');
               res.statusCode = 400;
               return res.end(JSON.stringify({ success: false, error: 'R2 credentials not configured' }));
@@ -356,6 +411,10 @@ export default defineConfig(() => {
       VitePWA({
         registerType: 'autoUpdate',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg'],
+        workbox: {
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+          globPatterns: ['**/*.{js,css,html,ico,png,svg}']
+        },
         manifest: {
           id: '/',
           name: 'Gamers Grid',
