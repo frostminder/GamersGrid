@@ -88,7 +88,7 @@ export async function uploadVideoToCloud(videoFile: File | Blob): Promise<string
       : new File([videoFile], `clip_${Date.now()}.mp4`, { type: videoFile.type || 'video/mp4' });
 
     const r2Result = await uploadToR2(fileToUpload);
-    if (r2Result && r2Result.url && r2Result.url.startsWith('http')) {
+    if (r2Result && r2Result.url) {
       return r2Result.url;
     }
   } catch (err) {

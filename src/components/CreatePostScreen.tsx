@@ -369,8 +369,8 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
         setUploadStatus('Uploading video clip...');
 
         const r2Res = await uploadToR2(videoToUpload);
-        if (!r2Res || !r2Res.url || !r2Res.url.startsWith('http')) {
-          throw new Error('Failed to upload video clip. Please try again.');
+        if (!r2Res || !r2Res.url) {
+          throw new Error('Failed to process video clip. Please try a different clip.');
         }
 
         finalVideoUrl = r2Res.url;
@@ -387,8 +387,8 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
         for (let i = 0; i < imageFiles.length; i++) {
           setUploadProgress(20 + Math.floor(((i + 1) / imageFiles.length) * 60));
           const r2Res = await uploadToR2(imageFiles[i]);
-          if (!r2Res || !r2Res.url || !r2Res.url.startsWith('http')) {
-            throw new Error(`Failed to upload image ${i + 1}.`);
+          if (!r2Res || !r2Res.url) {
+            throw new Error(`Failed to process image ${i + 1}.`);
           }
           uploadedImageUrls.push(r2Res.url);
         }

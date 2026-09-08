@@ -163,6 +163,10 @@ export const uploadToR2 = async (file: File): Promise<{ url: string, thumbnailUr
           thumbnailUrl
         };
       }
+      return {
+        url: URL.createObjectURL(file),
+        thumbnailUrl
+      };
     } else if (file.type.startsWith('image/')) {
       return new Promise((resolve) => {
         const reader = new FileReader();
