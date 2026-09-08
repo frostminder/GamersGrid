@@ -544,7 +544,7 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-gray-400">
-                Screenshots ({imageFiles.length}/10)
+                Images ({imageFiles.length}/10)
               </span>
               <button
                 type="button"
@@ -563,7 +563,7 @@ export const CreatePostScreen: React.FC<CreatePostScreenProps> = ({ onBack, onPo
               >
                 <Image className="w-10 h-10 text-purple-400" />
                 <p className="font-bold text-sm text-white">
-                  Tap to upload high-res screenshots
+                  Tap to upload images
                 </p>
                 <p className="text-xs text-gray-400">
                   Select up to 10 images
